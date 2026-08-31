@@ -1,0 +1,42 @@
+# Dependencies
+node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build
+.next
+out
+dist
+build
+
+# Git
+.git
+.gitignore
+
+# Env (injected at runtime via compose)
+.env
+.env.*
+!.env.docker.example
+
+# IDE / OS
+.idea
+.vscode
+.DS_Store
+Thumbs.db
+*.lnk
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Agent Windows (montado em volume no compose)
+private/mesh/*.exe
+private/mesh/*.msh
+
+# Tests / misc
+coverage
+*.md
+!README.md
+agent-transcripts

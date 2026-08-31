@@ -1,0 +1,106 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: adelmsp-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-adelmsp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no .env}
+      POSTGRES_DB: ${POSTGRES_DB:-adelmsp}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-adelmsp} -d ${POSTGRES_DB:-adelmsp}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - adelmsp-network
+
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: migrator
+    container_name: adelmsp-migrate
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-adelmsp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no .env}
+      POSTGRES_DB: ${POSTGRES_DB:-adelmsp}
+      POSTGRES_HOST: db
+      DATABASE_URL: postgresql://${POSTGRES_USER:-adelmsp}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-adelmsp}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - adelmsp-network
+    restart: "no"
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_BASE_URL: ${NEXT_PUBLIC_BASE_URL:-https://msp.adelweb.com.br}
+    container_name: adelmsp-app
+    restart: unless-stopped
+    expose:
+      - "3000"
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-adelmsp}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-adelmsp}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Defina BETTER_AUTH_SECRET no .env}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-https://msp.adelweb.com.br}
+      NEXT_PUBLIC_BASE_URL: ${NEXT_PUBLIC_BASE_URL:-https://msp.adelweb.com.br}
+      VAULT_SECRET: ${VAULT_SECRET:-}
+      MESHCENTRAL_URL: ${MESHCENTRAL_URL:-}
+      MESHCENTRAL_AGENT_WSS: ${MESHCENTRAL_AGENT_WSS:-}
+      MESHCENTRAL_MESH_NAME: ${MESHCENTRAL_MESH_NAME:-AdelMsp}
+      MESHCENTRAL_MESH_ID: ${MESHCENTRAL_MESH_ID:-}
+      MESHCENTRAL_SERVER_ID: ${MESHCENTRAL_SERVER_ID:-}
+      MESHCENTRAL_LOGIN_TOKEN: ${MESHCENTRAL_LOGIN_TOKEN:-}
+      MESHCENTRAL_USER: ${MESHCENTRAL_USER:-suporte}
+      MESHCENTRAL_PASS: ${MESHCENTRAL_PASS:-}
+      MESHCENTRAL_DIR: ${MESHCENTRAL_DIR:-}
+      MESHCENTRAL_AGENT_PATH: ${MESHCENTRAL_AGENT_PATH:-private/mesh/AdelMsp.Remote.exe}
+    volumes:
+      - ./private/mesh:/app/private/mesh:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      - adelmsp-network
+      - traefik
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=${TRAEFIK_NETWORK:-proxy}
+      - traefik.http.routers.adelmsp.rule=Host(`${APP_DOMAIN:-msp.adelweb.com.br}`)
+      - traefik.http.routers.adelmsp.entrypoints=websecure
+      - traefik.http.routers.adelmsp.tls=true
+      - traefik.http.routers.adelmsp.tls.certresolver=letsencrypt
+      - traefik.http.routers.adelmsp.service=adelmsp
+      - traefik.http.services.adelmsp.loadbalancer.server.port=3000
+      - traefik.http.routers.adelmsp-http.rule=Host(`${APP_DOMAIN:-msp.adelweb.com.br}`)
+      - traefik.http.routers.adelmsp-http.entrypoints=web
+      - traefik.http.routers.adelmsp-http.middlewares=adelmsp-https-redirect
+      - traefik.http.middlewares.adelmsp-https-redirect.redirectscheme.scheme=https
+      - traefik.http.middlewares.adelmsp-https-redirect.redirectscheme.permanent=true
+
+networks:
+  adelmsp-network:
+    driver: bridge
+  traefik:
+    external: true
+    name: ${TRAEFIK_NETWORK:-proxy}
+
+volumes:
+  postgres_data:

@@ -1,0 +1,24 @@
+{
+  "settings": {
+    "cert": "192.168.15.12",
+    "port": 4443,
+    "redirPort": 0,
+    "LANonly": false,
+    "allowLoginToken": true,
+    "allowFraming": true,
+    "sessionSameSite": "none"
+  },
+  "domains": {
+    "": {
+      "title": "AdelMsp",
+      "newAccounts": false,
+      "agentCustomization": {
+        "displayName": "AdelMsp",
+        "description": "Agente AdelMsp",
+        "companyName": "AdelMsp",
+        "serviceName": "AdelMspRemote",
+        "fileName": "AdelMsp"
+      }
+    }
+  }
+}
