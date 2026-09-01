@@ -84,7 +84,6 @@ export function meshAgentDownloadUrl(settings: MeshSettings) {
 export async function resolveMeshSettings(): Promise<MeshSettings> {
   const settings = getMeshSettings();
   if (!settings.enabled) return settings;
-  if (settings.meshId && settings.serverId) return settings;
   try {
     const live = await fetchMeshIdentity(settings);
     return {
