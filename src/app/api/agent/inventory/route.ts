@@ -36,8 +36,25 @@ function machineKind(value: unknown) {
 
 function asString(value: unknown) {
   if (value === null || value === undefined) return null;
-  const text = String(value).trim();
+  const text = stripNuls(String(value)).trim();
   return text || null;
+}
+
+function stripNuls(value: string) {
+  return value.replace(/\u0000/g, "").replace(/[\u0001-\u0008\u000B\u000C\u000E-\u001F]/g, "");
+}
+
+function sanitizeJson(value: unknown): unknown {
+  if (typeof value === "string") return stripNuls(value);
+  if (Array.isArray(value)) return value.map(sanitizeJson);
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
+      out[stripNuls(key)] = sanitizeJson(nested);
+    }
+    return out;
+  }
+  return value;
 }
 
 function firstAdapter(network: Record<string, unknown> | undefined) {
@@ -69,9 +86,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Inventário inválido." }, { status: 400 });
   }
 
-  const payload = { ...parsed.data } as Record<string, unknown>;
+  const payload = sanitizeJson({ ...parsed.data }) as Record<string, unknown>;
   const system = {
-    ...((parsed.data.system ?? {}) as Record<string, unknown>),
+    ...((payload.system ?? {}) as Record<string, unknown>),
   };
   const windowsKey = asString(system.windowsKey);
   if (windowsKey) {
