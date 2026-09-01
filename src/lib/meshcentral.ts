@@ -55,10 +55,7 @@ export function getMeshSettings(): MeshSettings {
     user: (process.env.MESHCENTRAL_USER ?? "").trim(),
     pass: (process.env.MESHCENTRAL_PASS ?? "").trim(),
     dir: (process.env.MESHCENTRAL_DIR ?? "").trim(),
-    agentPath: path.resolve(
-      process.cwd(),
-      process.env.MESHCENTRAL_AGENT_PATH ?? "private/mesh/AdelMsp.Remote.exe"
-    ),
+    agentPath: path.join(process.cwd(), "private", "mesh", "AdelMsp.Remote.exe"),
     enabled: Boolean(url && meshServer),
   };
 }
