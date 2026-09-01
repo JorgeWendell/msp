@@ -259,9 +259,14 @@ export const connectMeshSession = inventarioAction
   .inputSchema(z.object({ id: z.string() }))
   .action(async ({ parsedInput, ctx }) => {
     const owned = await ownedAsset(ctx.organizationId, parsedInput.id);
-    const { createMeshLoginToken, findMeshNodeId, getMeshSettings, meshViewerUrl } = await import(
-      "@/lib/meshcentral"
-    );
+    const {
+      createMeshLoginToken,
+      findMeshNodeId,
+      getMeshSettings,
+      listMeshDevices,
+      meshViewerUrl,
+      pickMeshNodeId,
+    } = await import("@/lib/meshcentral");
     const mesh = getMeshSettings();
     if (!mesh.enabled) {
       throw new ActionError(
@@ -269,7 +274,17 @@ export const connectMeshSession = inventarioAction
       );
     }
 
-    const nodeId = (await findMeshNodeId(owned.hostname, owned.id)) || owned.meshNodeId;
+    const devices = await listMeshDevices(mesh);
+    if (devices === null && !owned.meshNodeId) {
+      throw new ActionError(
+        "O painel não autenticou no Mesh. Confira MESHCENTRAL_USER=suporte e MESHCENTRAL_PASS no .env do servidor e rode docker compose up -d de novo."
+      );
+    }
+
+    const nodeId =
+      (devices ? pickMeshNodeId(devices, owned.hostname, owned.id) : null) ||
+      owned.meshNodeId ||
+      (devices === null ? await findMeshNodeId(owned.hostname, owned.id) : null);
     if (nodeId && nodeId !== owned.meshNodeId) {
       await db
         .update(asset)
@@ -279,7 +294,7 @@ export const connectMeshSession = inventarioAction
 
     if (!nodeId) {
       throw new ActionError(
-        "O agente remoto ainda não vinculou esta máquina. Aguarde um minuto e tente de novo."
+        "A máquina ainda não apareceu em mesh.adelweb.com.br. No cliente, o arquivo AdelMsp.Remote.msh precisa ter MeshServer=wss://mesh.adelweb.com.br/agent.ashx. Rode o AdelMsp.exe como Administrador de novo."
       );
     }
 

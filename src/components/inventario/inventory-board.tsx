@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
-import { deleteAsset, listAssets, listInventoryClients, saveAsset, connectMeshSession } from "@/actions/inventario";
+import { deleteAsset, listAssets, listInventoryClients, saveAsset } from "@/actions/inventario";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -174,12 +174,7 @@ export function InventoryBoard({
     await load();
   }
 
-  async function handleConnect(row: AssetRow) {
-    const result = await connectMeshSession({ id: row.id });
-    if (result.serverError || !result.data?.url) {
-      toast.error(result.serverError || "Não foi possível abrir o remoto.");
-      return;
-    }
+  function handleConnect(row: AssetRow) {
     window.open(`/inventario/${row.id}/remoto`, "_blank", "noopener,noreferrer");
   }
 

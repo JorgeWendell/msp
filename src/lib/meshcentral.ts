@@ -104,9 +104,19 @@ export async function createMeshLoginToken(settings: MeshSettings) {
   return createMeshLoginTokenFromDb(settings);
 }
 
+export async function listMeshDevices(settings: MeshSettings = getMeshSettings()) {
+  const primary = await listLiveMeshDevices(settings);
+  if (primary) return primary;
+  if (settings.controlUrl && settings.url && settings.controlUrl !== settings.url) {
+    return listLiveMeshDevices({ ...settings, controlUrl: settings.url });
+  }
+  return null;
+}
+
 export async function findMeshNodeId(hostname: string, assetId: string) {
   const settings = getMeshSettings();
-  const live = await findLiveMeshNodeId(hostname, assetId, settings);
+  const liveList = await listMeshDevices(settings);
+  const live = liveList ? pickMeshNodeId(liveList, hostname, assetId) : null;
   if (live) return live;
   const fromDb = settings.dir
     ? await findMeshNodeIdFromDb(hostname, assetId, settings.dir)
@@ -146,7 +156,13 @@ export async function findMeshNodeId(hostname: string, assetId: string) {
 
 function meshWsUrl(settings: MeshSettings) {
   const base = (settings.controlUrl || settings.url).replace(/\/$/, "");
-  return `${base.replace(/^http/, "ws")}/control.ashx`;
+  const ws = `${base.replace(/^http/, "ws")}/control.ashx`;
+  if (!settings.user || !settings.pass) return ws;
+  const params = new URLSearchParams({
+    user: settings.user,
+    pass: settings.pass,
+  });
+  return `${ws}?${params.toString()}`;
 }
 
 function hashToHex(value: string) {
@@ -293,15 +309,13 @@ async function requestMeshLoginCookie(settings: MeshSettings) {
   });
 }
 
-async function findLiveMeshNodeId(hostname: string, assetId: string, settings: MeshSettings) {
-  const list = await withMeshControl(settings, async (send, wait) => {
+async function listLiveMeshDevices(settings: MeshSettings) {
+  return withMeshControl(settings, async (send, wait) => {
     await wait("serverinfo").catch(() => null);
     send({ action: "nodes", responseid: "adelmsp-nodes" });
     const msg = await wait("nodes");
     return flattenNodes(msg);
   });
-  if (!list?.length) return null;
-  return pickMeshNodeId(list, hostname, assetId);
 }
 
 async function createMeshLoginTokenFromDb(settings: MeshSettings) {
@@ -358,7 +372,7 @@ function nodeMatchesMachine(item: MeshDevice, hostname: string, assetId: string)
   );
 }
 
-function pickMeshNodeId(list: MeshDevice[], hostname: string, assetId: string) {
+export function pickMeshNodeId(list: MeshDevice[], hostname: string, assetId: string) {
   const matches = list.filter((item) => item._id && nodeMatchesMachine(item, hostname, assetId));
   const online = [...matches].reverse().find((item) => ((item.conn ?? 0) & 1) !== 0);
   return online?._id ?? matches.at(-1)?._id ?? null;
