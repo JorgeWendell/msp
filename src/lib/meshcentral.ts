@@ -71,8 +71,8 @@ export function meshViewerUrl(settings: MeshSettings, nodeId: string, loginToken
   params.set("node", nodeKey);
   params.set("gotonode", nodeKey);
   params.set("viewmode", "11");
-  // 1 = faixa AdelMsp, 8 = título da página, 16 = menu lateral do MeshCentral
-  params.set("hide", "25");
+  // 1 = faixa, 2 = barra Terminal/Arquivos/..., 8 = título, 16 = menu lateral
+  params.set("hide", "27");
   return `${settings.url}/?${params.toString()}`;
 }
 

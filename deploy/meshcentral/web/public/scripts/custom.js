@@ -10,6 +10,30 @@
       };
       mark();
       document.addEventListener("DOMContentLoaded", mark);
+      var css = document.createElement("style");
+      css.textContent = [
+        "body.adelmsp-embed #masthead,",
+        "body.adelmsp-embed #page_leftbar,",
+        "body.adelmsp-embed #topbar,",
+        "body.adelmsp-embed #MainMenuSpan,",
+        "body.adelmsp-embed #MainSubMenuSpan,",
+        "body.adelmsp-embed #MainDev,",
+        "body.adelmsp-embed #MainDevTerminal,",
+        "body.adelmsp-embed #MainDevFiles,",
+        "body.adelmsp-embed #MainDevRegistry,",
+        "body.adelmsp-embed #MainDevApps,",
+        "body.adelmsp-embed #MainDevEvents,",
+        "body.adelmsp-embed #MainDevInfo,",
+        "body.adelmsp-embed #MainDevConsole,",
+        "body.adelmsp-embed #MainDevAmt,",
+        "body.adelmsp-embed #MainDevPlugins,",
+        "body.adelmsp-embed #p11title,",
+        "body.adelmsp-embed #DeskTools,",
+        "body.adelmsp-embed #DeskToolsButton,",
+        "body.adelmsp-embed #deskToolsTopTabProcess,",
+        "body.adelmsp-embed #DeskToolsProcessTab { display: none !important; }",
+      ].join("\n");
+      document.head.appendChild(css);
     }
 
     if (typeof MeshServerCreateControl === "function" && !MeshServerCreateControl._adelmsp) {
@@ -35,6 +59,11 @@
     var tries = 0;
     var timer = setInterval(function () {
       tries += 1;
+
+      var tools = document.getElementById("DeskTools");
+      if (tools) tools.style.display = "none";
+      var toolsBtn = document.getElementById("DeskToolsButton");
+      if (toolsBtn) toolsBtn.style.display = "none";
 
       var input = document.getElementById("DeskControl");
       if (input && !input.checked) input.checked = true;

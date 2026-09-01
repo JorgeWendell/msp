@@ -1,0 +1,25 @@
+/* Sessão embutida do AdelMSP (?hide= na URL): só a área de trabalho. */
+
+body.adelmsp-embed #masthead,
+body.adelmsp-embed #page_leftbar,
+body.adelmsp-embed #topbar,
+body.adelmsp-embed #MainMenuSpan,
+body.adelmsp-embed #MainSubMenuSpan,
+body.adelmsp-embed #MainDev,
+body.adelmsp-embed #MainDevTerminal,
+body.adelmsp-embed #MainDevFiles,
+body.adelmsp-embed #MainDevRegistry,
+body.adelmsp-embed #MainDevApps,
+body.adelmsp-embed #MainDevEvents,
+body.adelmsp-embed #MainDevInfo,
+body.adelmsp-embed #MainDevConsole,
+body.adelmsp-embed #MainDevAmt,
+body.adelmsp-embed #MainDevPlugins,
+body.adelmsp-embed #p11title,
+body.adelmsp-embed #p11deviceNameHeader,
+body.adelmsp-embed #DeskTools,
+body.adelmsp-embed #DeskToolsButton,
+body.adelmsp-embed #deskToolsTopTabProcess,
+body.adelmsp-embed #DeskToolsProcessTab {
+  display: none !important;
+}
