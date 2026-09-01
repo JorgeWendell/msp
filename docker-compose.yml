@@ -58,8 +58,9 @@ services:
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:-https://msp.adelweb.com.br}
       NEXT_PUBLIC_BASE_URL: ${NEXT_PUBLIC_BASE_URL:-https://msp.adelweb.com.br}
       VAULT_SECRET: ${VAULT_SECRET:-}
-      MESHCENTRAL_URL: ${MESHCENTRAL_URL:-}
-      MESHCENTRAL_AGENT_WSS: ${MESHCENTRAL_AGENT_WSS:-}
+      MESHCENTRAL_URL: ${MESHCENTRAL_URL:-https://mesh.adelweb.com.br}
+      MESHCENTRAL_CONTROL_URL: ${MESHCENTRAL_CONTROL_URL:-http://meshcentral:4430}
+      MESHCENTRAL_AGENT_WSS: ${MESHCENTRAL_AGENT_WSS:-wss://mesh.adelweb.com.br/agent.ashx}
       MESHCENTRAL_MESH_NAME: ${MESHCENTRAL_MESH_NAME:-AdelMsp}
       MESHCENTRAL_MESH_ID: ${MESHCENTRAL_MESH_ID:-}
       MESHCENTRAL_SERVER_ID: ${MESHCENTRAL_SERVER_ID:-}
@@ -95,6 +96,48 @@ services:
       - traefik.http.middlewares.adelmsp-https-redirect.redirectscheme.scheme=https
       - traefik.http.middlewares.adelmsp-https-redirect.redirectscheme.permanent=true
 
+  meshcentral:
+    image: ghcr.io/ylianst/meshcentral:latest
+    container_name: adelmsp-meshcentral
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      HOSTNAME: ${MESH_DOMAIN:-mesh.adelweb.com.br}
+      PORT: "4430"
+      REDIR_PORT: "0"
+      ALLOW_NEW_ACCOUNTS: "false"
+      IFRAME: "true"
+      REVERSE_PROXY: "true"
+      REVERSE_PROXY_TLS_PORT: "443"
+      WEBRTC: "false"
+      DYNAMIC_CONFIG: "false"
+    volumes:
+      - meshcentral-data:/opt/meshcentral/meshcentral-data
+      - meshcentral-files:/opt/meshcentral/meshcentral-files
+      - ./deploy/meshcentral/config.json:/opt/meshcentral/meshcentral-data/config.json
+      - ./deploy/meshcentral/web:/opt/meshcentral/meshcentral-web:ro
+    expose:
+      - "4430"
+    networks:
+      - adelmsp-network
+      - traefik
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=${TRAEFIK_NETWORK:-proxy}
+      - traefik.http.routers.adelmsp-mesh.rule=Host(`${MESH_DOMAIN:-mesh.adelweb.com.br}`)
+      - traefik.http.routers.adelmsp-mesh.entrypoints=websecure
+      - traefik.http.routers.adelmsp-mesh.tls=true
+      - traefik.http.routers.adelmsp-mesh.tls.certresolver=letsencrypt
+      - traefik.http.routers.adelmsp-mesh.service=adelmsp-mesh
+      - traefik.http.services.adelmsp-mesh.loadbalancer.server.port=4430
+      - traefik.http.services.adelmsp-mesh.loadbalancer.server.scheme=http
+      - traefik.http.services.adelmsp-mesh.loadbalancer.passHostHeader=true
+      - traefik.http.routers.adelmsp-mesh-http.rule=Host(`${MESH_DOMAIN:-mesh.adelweb.com.br}`)
+      - traefik.http.routers.adelmsp-mesh-http.entrypoints=web
+      - traefik.http.routers.adelmsp-mesh-http.middlewares=adelmsp-mesh-https-redirect
+      - traefik.http.middlewares.adelmsp-mesh-https-redirect.redirectscheme.scheme=https
+      - traefik.http.middlewares.adelmsp-mesh-https-redirect.redirectscheme.permanent=true
+
 networks:
   adelmsp-network:
     driver: bridge
@@ -104,3 +147,5 @@ networks:
 
 volumes:
   postgres_data:
+  meshcentral-data:
+  meshcentral-files:

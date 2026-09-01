@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { assetByAgentToken, bearerToken } from "@/lib/agent-auth";
-import { getMeshSettings } from "@/lib/meshcentral";
+import { resolveMeshSettings } from "@/lib/meshcentral";
 
 export async function GET(request: Request) {
   const token = bearerToken(request);
@@ -14,8 +14,8 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Token inválido." }, { status: 401 });
   }
 
-  const mesh = getMeshSettings();
-  if (!mesh.enabled) {
+  const mesh = await resolveMeshSettings();
+  if (!mesh.enabled || !mesh.meshId || !mesh.meshServer) {
     return NextResponse.json({ error: "Remoto não configurado." }, { status: 404 });
   }
 

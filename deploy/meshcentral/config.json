@@ -1,0 +1,32 @@
+{
+  "settings": {
+    "cert": "mesh.adelweb.com.br",
+    "port": 4430,
+    "aliasPort": 443,
+    "redirPort": 0,
+    "tlsOffload": true,
+    "trustedProxy": true,
+    "WANonly": true,
+    "user": "suporte",
+    "allowLoginToken": true,
+    "allowFraming": true,
+    "sessionSameSite": "none",
+    "sessionTime": 525600,
+    "cookieIpCheck": false
+  },
+  "domains": {
+    "": {
+      "title": "AdelMsp",
+      "newAccounts": false,
+      "certUrl": "https://mesh.adelweb.com.br",
+      "agentConfig": ["webSocketMaskOverride=1"],
+      "agentCustomization": {
+        "displayName": "AdelMsp",
+        "description": "Agente AdelMsp",
+        "companyName": "AdelMsp",
+        "serviceName": "AdelMspRemote",
+        "fileName": "AdelMsp"
+      }
+    }
+  }
+}

@@ -269,7 +269,7 @@ export const connectMeshSession = inventarioAction
       );
     }
 
-    const nodeId = await findMeshNodeId(owned.hostname, owned.id);
+    const nodeId = (await findMeshNodeId(owned.hostname, owned.id)) || owned.meshNodeId;
     if (nodeId && nodeId !== owned.meshNodeId) {
       await db
         .update(asset)
