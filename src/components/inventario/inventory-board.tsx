@@ -95,6 +95,9 @@ export function InventoryBoard({
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [clients, setClients] = useState<ClientOption[]>([]);
+  const [restrictedToClientId, setRestrictedToClientId] = useState<string | null>(
+    null
+  );
   const [clientId, setClientId] = useState("");
   const [kind, setKind] = useState("");
   const [agentStatus, setAgentStatus] = useState(initialAgentStatus);
@@ -137,12 +140,21 @@ export function InventoryBoard({
   useEffect(() => {
     void listInventoryClients().then((result) => {
       if (result.serverError || !result.data) return;
-      setClients(result.data);
+      setClients(result.data.clients);
+      const locked = result.data.restrictedToClientId;
+      setRestrictedToClientId(locked);
+      if (locked) {
+        setClientId(locked);
+        setForm((current) => ({ ...current, clientId: locked }));
+      }
     });
   }, []);
 
   function openCreate() {
-    setForm(emptyForm);
+    setForm({
+      ...emptyForm,
+      clientId: restrictedToClientId || "",
+    });
     setOpen(true);
   }
 
@@ -220,9 +232,10 @@ export function InventoryBoard({
         <NativeSelect
           className="h-9 min-w-52"
           value={clientId}
+          disabled={Boolean(restrictedToClientId)}
           onChange={(event) => setClientId(event.target.value)}
         >
-          <option value="">Todos os clientes</option>
+          {restrictedToClientId ? null : <option value="">Todos os clientes</option>}
           {clients.map((item) => (
             <option key={item.id} value={item.id}>
               {item.name}
@@ -388,6 +401,7 @@ export function InventoryBoard({
                   id="asset-client"
                   className="h-9"
                   required
+                  disabled={Boolean(restrictedToClientId)}
                   value={form.clientId}
                   onChange={(event) =>
                     setForm((current) => ({

@@ -54,6 +54,7 @@ export function InventoryDetail({ id }: { id: string }) {
   const router = useRouter();
   const [asset, setAsset] = useState<Detail | null>(null);
   const [clients, setClients] = useState<ClientOption[]>([]);
+  const [clientLocked, setClientLocked] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [rotating, setRotating] = useState(false);
@@ -76,7 +77,8 @@ export function InventoryDetail({ id }: { id: string }) {
   useEffect(() => {
     void listInventoryClients().then((result) => {
       if (result.serverError || !result.data) return;
-      setClients(result.data);
+      setClients(result.data.clients);
+      setClientLocked(Boolean(result.data.restrictedToClientId));
     });
   }, []);
 
@@ -198,11 +200,15 @@ export function InventoryDetail({ id }: { id: string }) {
         <div className="grid gap-3 p-4 sm:grid-cols-2">
           <Field>
             <FieldLabel htmlFor="asset-client">Cliente</FieldLabel>
+            {clientLocked ? (
+              <input type="hidden" name="clientId" value={asset.clientId} />
+            ) : null}
             <NativeSelect
               id="asset-client"
-              name="clientId"
+              name={clientLocked ? undefined : "clientId"}
               className="h-9"
               defaultValue={asset.clientId}
+              disabled={clientLocked}
               required
             >
               {clients

@@ -8,6 +8,7 @@ import { assetByAgentToken, bearerToken } from "@/lib/agent-auth";
 
 const schema = z.object({
   agentVersion: z.string().trim().optional(),
+  status: z.enum(["online", "offline"]).optional(),
 });
 
 export async function POST(request: Request) {
@@ -28,7 +29,7 @@ export async function POST(request: Request) {
   await db
     .update(asset)
     .set({
-      agentStatus: "online",
+      agentStatus: parsed.data?.status === "offline" ? "offline" : "online",
       agentVersion: parsed.data?.agentVersion || owned.agentVersion,
       lastSeenAt: now,
       updatedAt: now,

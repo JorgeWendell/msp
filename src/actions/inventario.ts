@@ -6,19 +6,33 @@ import { z } from "zod";
 import {
   createAgentToken,
   isAssetKind,
+  isAgentStatus,
 } from "@/config/inventario";
 import { db } from "@/db";
 import { asset, assetInventory, client } from "@/db/schema";
+import { inventoryScopeClientId } from "@/lib/access";
+import {
+  expireStaleAgentStatus,
+  resolveAgentStatus,
+} from "@/lib/agent-presence";
 import { ActionError, moduleAction } from "@/lib/safe-action";
 import { decryptSecret } from "@/lib/vault-crypto";
 
 const inventarioAction = moduleAction("inventario");
 
-async function ownedAsset(organizationId: string, id: string) {
+async function ownedAsset(
+  organizationId: string,
+  id: string,
+  scopeClientId?: string | null
+) {
+  const filters = [eq(asset.id, id), eq(asset.organizationId, organizationId)];
+  if (scopeClientId) {
+    filters.push(eq(asset.clientId, scopeClientId));
+  }
   const [row] = await db
     .select()
     .from(asset)
-    .where(and(eq(asset.id, id), eq(asset.organizationId, organizationId)))
+    .where(and(...filters))
     .limit(1);
   if (!row) throw new ActionError("Máquina não encontrada.");
   return row;
@@ -35,11 +49,25 @@ async function ownedClient(organizationId: string, clientId: string) {
 }
 
 export const listInventoryClients = inventarioAction.action(async ({ ctx }) => {
-  return db
-      .select({ id: client.id, name: client.name, active: client.active, code: client.code })
+  const scope = inventoryScopeClientId(ctx.access);
+  const filters = [eq(client.organizationId, ctx.organizationId)];
+  if (scope) {
+    filters.push(eq(client.id, scope));
+  }
+  const clients = await db
+    .select({
+      id: client.id,
+      name: client.name,
+      active: client.active,
+      code: client.code,
+    })
     .from(client)
-    .where(eq(client.organizationId, ctx.organizationId))
+    .where(and(...filters))
     .orderBy(client.name);
+  return {
+    clients,
+    restrictedToClientId: scope,
+  };
 });
 
 export const listAssets = inventarioAction
@@ -51,18 +79,24 @@ export const listAssets = inventarioAction
     })
   )
   .action(async ({ parsedInput, ctx }) => {
+    const scope = inventoryScopeClientId(ctx.access);
+    if (scope && parsedInput.clientId && parsedInput.clientId !== scope) {
+      throw new ActionError("Você só pode ver as máquinas deste cliente.");
+    }
     const filters = [eq(asset.organizationId, ctx.organizationId)];
-    if (parsedInput.clientId) {
-      filters.push(eq(asset.clientId, parsedInput.clientId));
+    const clientId = scope ?? parsedInput.clientId;
+    if (clientId) {
+      filters.push(eq(asset.clientId, clientId));
     }
     if (parsedInput.kind && isAssetKind(parsedInput.kind)) {
       filters.push(eq(asset.kind, parsedInput.kind));
     }
-    if (parsedInput.agentStatus) {
+    await expireStaleAgentStatus(ctx.organizationId);
+    if (parsedInput.agentStatus && isAgentStatus(parsedInput.agentStatus)) {
       filters.push(eq(asset.agentStatus, parsedInput.agentStatus));
     }
 
-    return db
+    const rows = await db
       .select({
         id: asset.id,
         hostname: asset.hostname,
@@ -82,11 +116,25 @@ export const listAssets = inventarioAction
       .innerJoin(client, eq(asset.clientId, client.id))
       .where(and(...filters))
       .orderBy(desc(asset.createdAt));
+
+    return rows.map((row) => ({
+      ...row,
+      agentStatus: resolveAgentStatus(row.agentStatus, row.lastSeenAt),
+    }));
   });
 
 export const getAsset = inventarioAction
   .inputSchema(z.object({ id: z.string() }))
   .action(async ({ parsedInput, ctx }) => {
+    const scope = inventoryScopeClientId(ctx.access);
+    await expireStaleAgentStatus(ctx.organizationId);
+    const filters = [
+      eq(asset.id, parsedInput.id),
+      eq(asset.organizationId, ctx.organizationId),
+    ];
+    if (scope) {
+      filters.push(eq(asset.clientId, scope));
+    }
     const [row] = await db
       .select({
         id: asset.id,
@@ -111,13 +159,14 @@ export const getAsset = inventarioAction
       })
       .from(asset)
       .innerJoin(client, eq(asset.clientId, client.id))
-      .where(
-        and(eq(asset.id, parsedInput.id), eq(asset.organizationId, ctx.organizationId))
-      )
+      .where(and(...filters))
       .limit(1);
 
     if (!row) throw new ActionError("Máquina não encontrada.");
-    return row;
+    return {
+      ...row,
+      agentStatus: resolveAgentStatus(row.agentStatus, row.lastSeenAt),
+    };
   });
 
 const saveSchema = z.object({
@@ -140,10 +189,15 @@ export const saveAsset = inventarioAction
     if (!isAssetKind(parsedInput.kind)) {
       throw new ActionError("Tipo de máquina inválido.");
     }
-    await ownedClient(ctx.organizationId, parsedInput.clientId);
+    const scope = inventoryScopeClientId(ctx.access);
+    if (scope && parsedInput.clientId !== scope) {
+      throw new ActionError("Você só pode cadastrar máquinas deste cliente.");
+    }
+    const clientId = scope ?? parsedInput.clientId;
+    await ownedClient(ctx.organizationId, clientId);
 
     const payload = {
-      clientId: parsedInput.clientId,
+      clientId,
       hostname: parsedInput.hostname,
       serial: parsedInput.serial || null,
       kind: parsedInput.kind,
@@ -157,7 +211,7 @@ export const saveAsset = inventarioAction
     };
 
     if (parsedInput.id) {
-      await ownedAsset(ctx.organizationId, parsedInput.id);
+      await ownedAsset(ctx.organizationId, parsedInput.id, scope);
       await db
         .update(asset)
         .set(payload)
@@ -185,7 +239,11 @@ export const saveAsset = inventarioAction
 export const deleteAsset = inventarioAction
   .inputSchema(z.object({ id: z.string() }))
   .action(async ({ parsedInput, ctx }) => {
-    await ownedAsset(ctx.organizationId, parsedInput.id);
+    await ownedAsset(
+      ctx.organizationId,
+      parsedInput.id,
+      inventoryScopeClientId(ctx.access)
+    );
     await db
       .delete(asset)
       .where(
@@ -200,7 +258,11 @@ export const deleteAsset = inventarioAction
 export const rotateAgentToken = inventarioAction
   .inputSchema(z.object({ id: z.string() }))
   .action(async ({ parsedInput, ctx }) => {
-    await ownedAsset(ctx.organizationId, parsedInput.id);
+    await ownedAsset(
+      ctx.organizationId,
+      parsedInput.id,
+      inventoryScopeClientId(ctx.access)
+    );
     const agentToken = createAgentToken();
     await db
       .update(asset)
@@ -223,7 +285,11 @@ export const rotateAgentToken = inventarioAction
 export const getAssetInventory = inventarioAction
   .inputSchema(z.object({ id: z.string() }))
   .action(async ({ parsedInput, ctx }) => {
-    await ownedAsset(ctx.organizationId, parsedInput.id);
+    await ownedAsset(
+      ctx.organizationId,
+      parsedInput.id,
+      inventoryScopeClientId(ctx.access)
+    );
     const [row] = await db
       .select()
       .from(assetInventory)
@@ -258,7 +324,11 @@ export const getAssetInventory = inventarioAction
 export const connectMeshSession = inventarioAction
   .inputSchema(z.object({ id: z.string() }))
   .action(async ({ parsedInput, ctx }) => {
-    const owned = await ownedAsset(ctx.organizationId, parsedInput.id);
+    const owned = await ownedAsset(
+      ctx.organizationId,
+      parsedInput.id,
+      inventoryScopeClientId(ctx.access)
+    );
     const {
       createMeshLoginToken,
       findMeshNodeId,

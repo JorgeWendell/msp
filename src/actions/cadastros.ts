@@ -3,7 +3,11 @@
 import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 
-import { erpModules, type ModuleProfile } from "@/config/modules";
+import {
+  erpModules,
+  isInventoryOnlyProfiles,
+  type ModuleProfile,
+} from "@/config/modules";
 import { getCadastro } from "@/config/cadastros";
 import { db } from "@/db";
 import {
@@ -28,6 +32,29 @@ const tables = {
 } as const;
 
 type CrudSlug = keyof typeof tables;
+
+async function ownedClient(organizationId: string, clientId: string) {
+  const [row] = await db
+    .select({ id: client.id, name: client.name })
+    .from(client)
+    .where(and(eq(client.id, clientId), eq(client.organizationId, organizationId)))
+    .limit(1);
+  if (!row) throw new ActionError("Cliente inválido.");
+  return row;
+}
+
+async function setMemberClientScope(
+  organizationId: string,
+  memberId: string,
+  clientId: string | null
+) {
+  await db
+    .update(member)
+    .set({ restrictedClientId: clientId })
+    .where(
+      and(eq(member.id, memberId), eq(member.organizationId, organizationId))
+    );
+}
 
 function getTable(slug: CrudSlug) {
   // Generic CRUD; Drizzle unions collapse on intersect.
@@ -286,18 +313,26 @@ export const saveEmpresa = moduleAction("cadastros")
   });
 
 export const listUsuarios = moduleAction("cadastros").action(async ({ ctx }) => {
-  const rows = await db
-    .select({
-      memberId: member.id,
-      role: member.role,
-      userId: user.id,
-      name: user.name,
-      email: user.email,
-    })
-    .from(member)
-    .innerJoin(user, eq(member.userId, user.id))
-    .where(eq(member.organizationId, ctx.organizationId))
-    .orderBy(user.name);
+  const [rows, clients] = await Promise.all([
+    db
+      .select({
+        memberId: member.id,
+        role: member.role,
+        restrictedClientId: member.restrictedClientId,
+        userId: user.id,
+        name: user.name,
+        email: user.email,
+      })
+      .from(member)
+      .innerJoin(user, eq(member.userId, user.id))
+      .where(eq(member.organizationId, ctx.organizationId))
+      .orderBy(user.name),
+    db
+      .select({ id: client.id, name: client.name, active: client.active })
+      .from(client)
+      .where(eq(client.organizationId, ctx.organizationId))
+      .orderBy(client.name),
+  ]);
 
   for (const row of rows) {
     const fallback =
@@ -318,8 +353,11 @@ export const listUsuarios = moduleAction("cadastros").action(async ({ ctx }) => 
     .from(memberModule)
     .where(eq(memberModule.organizationId, ctx.organizationId));
 
+  const clientNameById = new Map(clients.map((item) => [item.id, item.name]));
+
   return {
     canManage: canManageUsers(ctx.access),
+    clients,
     users: rows.map((row) => {
       const mine = grants.filter((item) => item.memberId === row.memberId);
       const bySlug = new Map(mine.map((item) => [item.moduleSlug, item.profile]));
@@ -330,7 +368,13 @@ export const listUsuarios = moduleAction("cadastros").action(async ({ ctx }) => 
           ? "administrador"
           : (bySlug.get(item.slug) ?? "usuario")) as ModuleProfile,
       }));
-      return { ...row, modules };
+      return {
+        ...row,
+        modules,
+        restrictedClientName: row.restrictedClientId
+          ? (clientNameById.get(row.restrictedClientId) ?? null)
+          : null,
+      };
     }),
   };
 });
@@ -346,6 +390,7 @@ export const saveUsuario = moduleAction("cadastros")
         .enum(["administrador", "gestor", "usuario", "negado"])
         .default("usuario"),
       preset: z.enum(["todos", "inventario"]).default("todos"),
+      clientId: z.string().optional(),
     })
   )
   .action(async ({ parsedInput, ctx }) => {
@@ -354,6 +399,16 @@ export const saveUsuario = moduleAction("cadastros")
         "Somente administrador da empresa ou de Cadastros gerencia usuários."
       );
     }
+
+    let restrictedClientId: string | null = null;
+    if (parsedInput.preset === "inventario") {
+      if (!parsedInput.clientId) {
+        throw new ActionError("Selecione o cliente que este usuário poderá ver.");
+      }
+      await ownedClient(ctx.organizationId, parsedInput.clientId);
+      restrictedClientId = parsedInput.clientId;
+    }
+
     const [existing] = await db
       .select({ id: user.id })
       .from(user)
@@ -395,6 +450,7 @@ export const saveUsuario = moduleAction("cadastros")
       organizationId: ctx.organizationId,
       userId,
       role: parsedInput.role,
+      restrictedClientId,
       createdAt: now,
     });
 
@@ -421,9 +477,14 @@ export const updateUsuarioRole = moduleAction("cadastros")
         "Somente administrador da empresa ou de Cadastros gerencia usuários."
       );
     }
+    const patch: { role: typeof parsedInput.role; restrictedClientId?: string | null } =
+      { role: parsedInput.role };
+    if (parsedInput.role === "owner" || parsedInput.role === "admin") {
+      patch.restrictedClientId = null;
+    }
     await db
       .update(member)
-      .set({ role: parsedInput.role })
+      .set(patch)
       .where(
         and(
           eq(member.id, parsedInput.memberId),
@@ -437,6 +498,7 @@ export const saveModuleAccess = moduleAction("cadastros")
   .inputSchema(
     z.object({
       memberId: z.string(),
+      clientId: z.string().optional(),
       modules: z.array(
         z.object({
           slug: z.string(),
@@ -484,5 +546,24 @@ export const saveModuleAccess = moduleAction("cadastros")
           )
         );
     }
+
+    if (target.role === "admin") {
+      await setMemberClientScope(ctx.organizationId, target.id, null);
+    } else if (isInventoryOnlyProfiles(parsedInput.modules)) {
+      if (!parsedInput.clientId) {
+        throw new ActionError(
+          "Selecione o cliente que este usuário poderá ver no inventário."
+        );
+      }
+      await ownedClient(ctx.organizationId, parsedInput.clientId);
+      await setMemberClientScope(
+        ctx.organizationId,
+        target.id,
+        parsedInput.clientId
+      );
+    } else {
+      await setMemberClientScope(ctx.organizationId, target.id, null);
+    }
+
     return { ok: true };
   });

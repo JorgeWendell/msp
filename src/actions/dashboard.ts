@@ -5,7 +5,8 @@ import { and, count, eq, inArray, isNull } from "drizzle-orm";
 import { openTicketStatuses } from "@/config/tickets";
 import { db } from "@/db";
 import { asset, ticket } from "@/db/schema";
-import { canAccessModule, loadAccess } from "@/lib/access";
+import { canAccessModule, inventoryScopeClientId, loadAccess } from "@/lib/access";
+import { expireStaleAgentStatus } from "@/lib/agent-presence";
 import { ActionError, tenantAction } from "@/lib/safe-action";
 
 export const getDashboardStats = tenantAction.action(async ({ ctx }) => {
@@ -16,8 +17,17 @@ export const getDashboardStats = tenantAction.action(async ({ ctx }) => {
 
   const canTickets = canAccessModule(access, "tickets");
   const canInventario = canAccessModule(access, "inventario");
+  if (canInventario) {
+    await expireStaleAgentStatus(ctx.organizationId);
+  }
+  const scopedClientId = inventoryScopeClientId(access);
   const org = eq(ticket.organizationId, ctx.organizationId);
   const openQueue = inArray(ticket.status, [...openTicketStatuses]);
+  const withoutAgentFilters = [
+    eq(asset.organizationId, ctx.organizationId),
+    eq(asset.agentStatus, "desconhecido"),
+    ...(scopedClientId ? [eq(asset.clientId, scopedClientId)] : []),
+  ];
 
   const [openRow, criticalRow, unassignedRow, withoutAgentRow] =
     await Promise.all([
@@ -43,12 +53,7 @@ export const getDashboardStats = tenantAction.action(async ({ ctx }) => {
         ? db
             .select({ n: count() })
             .from(asset)
-            .where(
-              and(
-                eq(asset.organizationId, ctx.organizationId),
-                eq(asset.agentStatus, "desconhecido")
-              )
-            )
+            .where(and(...withoutAgentFilters))
         : Promise.resolve([{ n: 0 }]),
     ]);
 

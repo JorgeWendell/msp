@@ -27,6 +27,7 @@ export type AccessState = {
   organizationId: string;
   companyRole: string;
   isCompanyAdmin: boolean;
+  restrictedClientId: string | null;
   grants: ModuleGrant[];
 };
 
@@ -108,7 +109,11 @@ export async function loadAccess(
   userId: string
 ): Promise<AccessState | null> {
   const [row] = await db
-    .select({ id: member.id, role: member.role })
+    .select({
+      id: member.id,
+      role: member.role,
+      restrictedClientId: member.restrictedClientId,
+    })
     .from(member)
     .where(and(eq(member.organizationId, organizationId), eq(member.userId, userId)))
     .limit(1);
@@ -144,8 +149,14 @@ export async function loadAccess(
     organizationId,
     companyRole: row.role,
     isCompanyAdmin,
+    restrictedClientId: isCompanyAdmin ? null : row.restrictedClientId,
     grants,
   };
+}
+
+export function inventoryScopeClientId(access: AccessState) {
+  if (access.isCompanyAdmin) return null;
+  return access.restrictedClientId;
 }
 
 export function profileOf(access: AccessState, slug: string): ModuleProfile {

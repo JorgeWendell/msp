@@ -24,7 +24,7 @@ import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { PasswordInput } from "@/components/ui/password-input";
-import { accessPresets, moduleProfiles, profilesForPreset, type AccessPreset, type ModuleProfile } from "@/config/modules";
+import { accessPresets, isInventoryOnlyProfiles, moduleProfiles, profilesForPreset, type AccessPreset, type ModuleProfile } from "@/config/modules";
 
 const companyRoles = [
   { value: "owner", label: "Administrador da empresa" },
@@ -34,12 +34,16 @@ const companyRoles = [
 
 type Grant = { slug: string; title: string; profile: ModuleProfile };
 
+type ClientOption = { id: string; name: string; active: boolean };
+
 type UserRow = {
   memberId: string;
   userId: string;
   name: string;
   email: string;
   role: string;
+  restrictedClientId: string | null;
+  restrictedClientName: string | null;
   modules: Grant[];
 };
 
@@ -65,9 +69,12 @@ export function UsuariosCadastro() {
   const [password, setPassword] = useState("");
   const [initialProfile, setInitialProfile] = useState<ModuleProfile>("usuario");
   const [preset, setPreset] = useState<AccessPreset>("todos");
+  const [clientId, setClientId] = useState("");
+  const [clients, setClients] = useState<ClientOption[]>([]);
   const [editing, setEditing] = useState<UserRow | null>(null);
   const [editModules, setEditModules] = useState<Grant[]>([]);
   const [editRole, setEditRole] = useState<UserRow["role"]>("member");
+  const [editClientId, setEditClientId] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -79,6 +86,7 @@ export function UsuariosCadastro() {
     }
     setCanManage(result.data?.canManage ?? false);
     setRows((result.data?.users as UserRow[]) ?? []);
+    setClients((result.data?.clients as ClientOption[]) ?? []);
   }, []);
 
   useEffect(() => {
@@ -95,6 +103,7 @@ export function UsuariosCadastro() {
       role: "member",
       initialProfile,
       preset,
+      clientId: preset === "inventario" ? clientId : undefined,
     });
     setSaving(false);
     if (result.serverError) {
@@ -112,6 +121,7 @@ export function UsuariosCadastro() {
     setPassword("");
     setInitialProfile("usuario");
     setPreset("todos");
+    setClientId("");
     await load();
   }
 
@@ -133,6 +143,7 @@ export function UsuariosCadastro() {
     if (editRole !== "owner") {
       const result = await saveModuleAccess({
         memberId: editing.memberId,
+        clientId: editClientId || undefined,
         modules: editModules.map((item) => ({
           slug: item.slug,
           profile: item.profile,
@@ -188,6 +199,8 @@ export function UsuariosCadastro() {
                         ? "Admin da empresa"
                         : "Gestor da empresa"}
                     </Badge>
+                  ) : row.restrictedClientName ? (
+                    <Badge variant="outline">{row.restrictedClientName}</Badge>
                   ) : null}
                   {canManage && row.role !== "owner" ? (
                     <Button
@@ -197,6 +210,7 @@ export function UsuariosCadastro() {
                         setEditing(row);
                         setEditModules(row.modules);
                         setEditRole(row.role);
+                        setEditClientId(row.restrictedClientId ?? "");
                       }}
                     >
                       <Pencil />
@@ -226,8 +240,8 @@ export function UsuariosCadastro() {
           <DialogHeader>
             <DialogTitle>Novo usuário</DialogTitle>
             <DialogDescription>
-              O acesso define o que aparece no menu. “Só inventário” esconde
-              o resto e libera alteração das máquinas.
+              O acesso define o que aparece no menu. “Só inventário” limita as
+              máquinas a um cliente.
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleCreate} className="grid gap-4">
@@ -283,6 +297,27 @@ export function UsuariosCadastro() {
                   {accessPresets.find((item) => item.value === preset)?.description}
                 </p>
               </Field>
+              {preset === "inventario" ? (
+              <Field>
+                <FieldLabel htmlFor="user-client">Cliente do inventário</FieldLabel>
+                <NativeSelect
+                  id="user-client"
+                  className="h-9"
+                  value={clientId}
+                  onChange={(event) => setClientId(event.target.value)}
+                  required
+                >
+                  <option value="">Selecione o cliente</option>
+                  {clients
+                    .filter((item) => item.active)
+                    .map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name}
+                      </option>
+                    ))}
+                </NativeSelect>
+              </Field>
+              ) : null}
               {preset === "todos" ? (
               <Field>
                 <FieldLabel htmlFor="user-profile">
@@ -323,8 +358,8 @@ export function UsuariosCadastro() {
           <DialogHeader>
             <DialogTitle>Módulos — {editing?.name}</DialogTitle>
             <DialogDescription>
-              Administrador, gestor, usuário ou negado em cada área. Use Só
-              inventário para liberar apenas máquinas.
+              Administrador, gestor, usuário ou negado em cada área. Só
+              inventário exige um cliente.
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSaveModules} className="grid gap-4">
@@ -342,6 +377,31 @@ export function UsuariosCadastro() {
                 ))}
               </NativeSelect>
             </Field>
+            {editRole === "member" && isInventoryOnlyProfiles(editModules) ? (
+              <Field>
+                <FieldLabel htmlFor="edit-user-client">
+                  Cliente do inventário
+                </FieldLabel>
+                <NativeSelect
+                  id="edit-user-client"
+                  className="h-9"
+                  value={editClientId}
+                  onChange={(event) => setEditClientId(event.target.value)}
+                  required
+                >
+                  <option value="">Selecione o cliente</option>
+                  {clients
+                    .filter(
+                      (item) => item.active || item.id === editClientId
+                    )
+                    .map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name}
+                      </option>
+                    ))}
+                </NativeSelect>
+              </Field>
+            ) : null}
             <Button
               type="button"
               variant="outline"

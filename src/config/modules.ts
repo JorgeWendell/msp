@@ -108,7 +108,8 @@ export const accessPresets: {
   {
     value: "inventario",
     label: "Só inventário",
-    description: "Vê somente o Inventário e pode cadastrar, editar e excluir máquinas.",
+    description:
+      "Vê somente o Inventário das máquinas de um cliente. Escolha o cliente no cadastro.",
   },
 ];
 
@@ -126,6 +127,22 @@ export function profilesForPreset(
         : fallback,
     ])
   );
+}
+
+export function isInventoryOnlyProfiles(
+  profiles:
+    | Record<string, ModuleProfile>
+    | { slug: string; profile: ModuleProfile }[]
+) {
+  const bySlug = Array.isArray(profiles)
+    ? Object.fromEntries(profiles.map((item) => [item.slug, item.profile]))
+    : profiles;
+  return erpModules.every((item) => {
+    const profile = bySlug[item.slug] ?? "negado";
+    return item.slug === "inventario"
+      ? profile !== "negado"
+      : profile === "negado";
+  });
 }
 
 export type ErpModule = MspModule;
