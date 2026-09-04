@@ -15,6 +15,7 @@ import {
   expireStaleAgentStatus,
   resolveAgentStatus,
 } from "@/lib/agent-presence";
+import { lanIpFromInventory } from "@/lib/lan-ip";
 import { ActionError, moduleAction } from "@/lib/safe-action";
 import { decryptSecret } from "@/lib/vault-crypto";
 
@@ -111,16 +112,22 @@ export const listAssets = inventarioAction
         lastSeenAt: asset.lastSeenAt,
         meshNodeId: asset.meshNodeId,
         clientName: client.name,
+        inventoryPayload: assetInventory.payload,
       })
       .from(asset)
       .innerJoin(client, eq(asset.clientId, client.id))
+      .leftJoin(assetInventory, eq(assetInventory.assetId, asset.id))
       .where(and(...filters))
       .orderBy(desc(asset.createdAt));
 
-    return rows.map((row) => ({
-      ...row,
-      agentStatus: resolveAgentStatus(row.agentStatus, row.lastSeenAt),
-    }));
+    return rows.map((row) => {
+      const { inventoryPayload, ...assetRow } = row;
+      return {
+        ...assetRow,
+        ip: lanIpFromInventory(inventoryPayload, row.ip),
+        agentStatus: resolveAgentStatus(row.agentStatus, row.lastSeenAt),
+      };
+    });
   });
 
 export const getAsset = inventarioAction
@@ -156,15 +163,19 @@ export const getAsset = inventarioAction
         lastSeenAt: asset.lastSeenAt,
         createdAt: asset.createdAt,
         updatedAt: asset.updatedAt,
+        inventoryPayload: assetInventory.payload,
       })
       .from(asset)
       .innerJoin(client, eq(asset.clientId, client.id))
+      .leftJoin(assetInventory, eq(assetInventory.assetId, asset.id))
       .where(and(...filters))
       .limit(1);
 
     if (!row) throw new ActionError("Máquina não encontrada.");
+    const { inventoryPayload, ...assetRow } = row;
     return {
-      ...row,
+      ...assetRow,
+      ip: lanIpFromInventory(inventoryPayload, row.ip),
       agentStatus: resolveAgentStatus(row.agentStatus, row.lastSeenAt),
     };
   });

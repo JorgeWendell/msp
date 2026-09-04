@@ -6,7 +6,7 @@ import { isAssetKind } from "@/config/inventario";
 import { db } from "@/db";
 import { asset, assetInventory } from "@/db/schema";
 import { assetByAgentToken, bearerToken } from "@/lib/agent-auth";
-import { encryptSecret } from "@/lib/vault-crypto";
+import { lanIpFromInventory, pickLanAdapter } from "@/lib/lan-ip";
 
 const schema = z.object({
   agentVersion: z.string().optional(),
@@ -58,15 +58,7 @@ function sanitizeJson(value: unknown): unknown {
 }
 
 function firstAdapter(network: Record<string, unknown> | undefined) {
-  const adapters = Array.isArray(network?.adapters) ? network.adapters : [];
-  const usable = adapters.find((item) => {
-    if (!item || typeof item !== "object") return false;
-    const row = item as Record<string, unknown>;
-    const ipv4 = String(row.ipv4 ?? "");
-    const type = String(row.type ?? "").toLowerCase();
-    return ipv4 && !ipv4.startsWith("127.") && type !== "loopback";
-  }) as Record<string, unknown> | undefined;
-  return usable;
+  return pickLanAdapter(network?.adapters) as Record<string, unknown> | null;
 }
 
 export async function POST(request: Request) {

@@ -99,20 +99,37 @@ export function InventoryBoard({
     null
   );
   const [clientId, setClientId] = useState("");
-  const [kind, setKind] = useState("");
-  const [agentStatus, setAgentStatus] = useState(initialAgentStatus);
   const [locate, setLocate] = useState("");
+  const [colHostname, setColHostname] = useState("");
+  const [colClient, setColClient] = useState("");
+  const [colKind, setColKind] = useState("");
+  const [colOs, setColOs] = useState("");
+  const [colIp, setColIp] = useState("");
+  const [colAgent, setColAgent] = useState(initialAgentStatus);
   const [form, setForm] = useState(emptyForm);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const locateQuery = locate.trim().toLowerCase();
 
   const displayed = useMemo(() => {
-    if (!locateQuery) return rows;
-    return [...rows].sort(
+    const hostname = colHostname.trim().toLowerCase();
+    const client = colClient.trim().toLowerCase();
+    const os = colOs.trim().toLowerCase();
+    const ip = colIp.trim().toLowerCase();
+    const filtered = rows.filter((row) => {
+      if (hostname && !row.hostname.toLowerCase().includes(hostname)) return false;
+      if (client && !row.clientName.toLowerCase().includes(client)) return false;
+      if (colKind && row.kind !== colKind) return false;
+      if (os && !(row.os ?? "").toLowerCase().includes(os)) return false;
+      if (ip && !(row.ip ?? "").toLowerCase().includes(ip)) return false;
+      if (colAgent && row.agentStatus !== colAgent) return false;
+      return true;
+    });
+    if (!locateQuery) return filtered;
+    return [...filtered].sort(
       (a, b) => locateScore(b, locateQuery) - locateScore(a, locateQuery)
     );
-  }, [rows, locateQuery]);
+  }, [rows, locateQuery, colHostname, colClient, colKind, colOs, colIp, colAgent]);
 
   const locatedCount = locateQuery
     ? displayed.filter((row) => locateScore(row, locateQuery) > 0).length
@@ -122,8 +139,6 @@ export function InventoryBoard({
     setLoading(true);
     const result = await listAssets({
       clientId: clientId || undefined,
-      kind: kind || undefined,
-      agentStatus: agentStatus || undefined,
     });
     setLoading(false);
     if (result.serverError) {
@@ -131,7 +146,7 @@ export function InventoryBoard({
       return;
     }
     setRows((result.data as AssetRow[]) ?? []);
-  }, [clientId, kind, agentStatus]);
+  }, [clientId]);
 
   useEffect(() => {
     void load();
@@ -229,43 +244,6 @@ export function InventoryBoard({
             onChange={(event) => setLocate(event.target.value)}
           />
         </div>
-        <NativeSelect
-          className="h-9 min-w-52"
-          value={clientId}
-          disabled={Boolean(restrictedToClientId)}
-          onChange={(event) => setClientId(event.target.value)}
-        >
-          {restrictedToClientId ? null : <option value="">Todos os clientes</option>}
-          {clients.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.name}
-            </option>
-          ))}
-        </NativeSelect>
-        <NativeSelect
-          className="h-9 w-44"
-          value={kind}
-          onChange={(event) => setKind(event.target.value)}
-        >
-          <option value="">Todos os tipos</option>
-          {assetKinds.map((item) => (
-            <option key={item.value} value={item.value}>
-              {item.label}
-            </option>
-          ))}
-        </NativeSelect>
-        <NativeSelect
-          className="h-9 w-44"
-          value={agentStatus}
-          onChange={(event) => setAgentStatus(event.target.value)}
-        >
-          <option value="">Todo o agente</option>
-          {agentStatuses.map((item) => (
-            <option key={item.value} value={item.value}>
-              {item.label}
-            </option>
-          ))}
-        </NativeSelect>
       </div>
       {locateQuery ? (
         <p className="text-xs text-muted-foreground">
@@ -277,8 +255,8 @@ export function InventoryBoard({
         </p>
       ) : null}
 
-      <div className="overflow-hidden rounded-xl border">
-        <table className="w-full text-sm">
+      <div className="overflow-x-auto rounded-xl border">
+        <table className="w-full min-w-[880px] text-sm">
           <thead className="bg-muted/50 text-left text-xs text-muted-foreground">
             <tr>
               <th className="px-3 py-2.5 font-medium">Hostname</th>
@@ -289,6 +267,80 @@ export function InventoryBoard({
               <th className="px-3 py-2.5 font-medium">Agente</th>
               <th className="px-3 py-2.5 font-medium">Ações</th>
             </tr>
+            <tr className="border-t bg-background">
+              <th className="px-2 py-1.5 font-normal">
+                <Input
+                  className="h-8 text-xs"
+                  value={colHostname}
+                  placeholder="Filtrar..."
+                  onChange={(event) => setColHostname(event.target.value)}
+                />
+              </th>
+              <th className="px-2 py-1.5 font-normal">
+                {restrictedToClientId ? (
+                  <Input
+                    className="h-8 text-xs"
+                    value={
+                      clients.find((item) => item.id === restrictedToClientId)
+                        ?.name ?? ""
+                    }
+                    disabled
+                  />
+                ) : (
+                  <Input
+                    className="h-8 text-xs"
+                    value={colClient}
+                    placeholder="Filtrar..."
+                    onChange={(event) => setColClient(event.target.value)}
+                  />
+                )}
+              </th>
+              <th className="px-2 py-1.5 font-normal">
+                <NativeSelect
+                  className="h-8 text-xs"
+                  value={colKind}
+                  onChange={(event) => setColKind(event.target.value)}
+                >
+                  <option value="">Todos</option>
+                  {assetKinds.map((item) => (
+                    <option key={item.value} value={item.value}>
+                      {item.label}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </th>
+              <th className="px-2 py-1.5 font-normal">
+                <Input
+                  className="h-8 text-xs"
+                  value={colOs}
+                  placeholder="Filtrar..."
+                  onChange={(event) => setColOs(event.target.value)}
+                />
+              </th>
+              <th className="px-2 py-1.5 font-normal">
+                <Input
+                  className="h-8 text-xs"
+                  value={colIp}
+                  placeholder="Filtrar..."
+                  onChange={(event) => setColIp(event.target.value)}
+                />
+              </th>
+              <th className="px-2 py-1.5 font-normal">
+                <NativeSelect
+                  className="h-8 text-xs"
+                  value={colAgent}
+                  onChange={(event) => setColAgent(event.target.value)}
+                >
+                  <option value="">Todos</option>
+                  {agentStatuses.map((item) => (
+                    <option key={item.value} value={item.value}>
+                      {item.label}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </th>
+              <th className="px-2 py-1.5" />
+            </tr>
           </thead>
           <tbody>
             {loading ? (
@@ -297,10 +349,12 @@ export function InventoryBoard({
                   Carregando...
                 </td>
               </tr>
-            ) : rows.length === 0 ? (
+            ) : displayed.length === 0 ? (
               <tr>
                 <td className="px-3 py-8 text-center text-muted-foreground" colSpan={7}>
-                  Nenhuma máquina ainda.
+                  {rows.length === 0
+                    ? "Nenhuma máquina ainda."
+                    : "Nenhuma máquina com esses filtros."}
                 </td>
               </tr>
             ) : (
