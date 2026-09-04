@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowDown, ArrowUp, EllipsisVertical, Loader2, Monitor, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, EllipsisVertical, Loader2, Monitor, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -49,6 +49,8 @@ type AssetRow = {
 };
 
 type ClientOption = { id: string; name: string; active: boolean; code?: string | null };
+
+const PAGE_SIZE = 9;
 
 const emptyForm = {
   clientId: "",
@@ -144,6 +146,7 @@ export function InventoryBoard({
   const [locate, setLocate] = useState("");
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const [page, setPage] = useState(1);
   const [form, setForm] = useState(emptyForm);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
@@ -168,6 +171,17 @@ export function InventoryBoard({
       return sortDir === "asc" ? cmp : -cmp;
     });
   }, [rows, locateQuery, sortKey, sortDir, initialAgentStatus]);
+
+  const pageCount = Math.max(1, Math.ceil(displayed.length / PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount);
+  const paged = displayed.slice(
+    (currentPage - 1) * PAGE_SIZE,
+    currentPage * PAGE_SIZE
+  );
+
+  useEffect(() => {
+    setPage(1);
+  }, [locateQuery, sortKey, sortDir, initialAgentStatus]);
 
   const locatedCount = locateQuery
     ? displayed.filter((row) => locateScore(row, locateQuery) > 0).length
@@ -367,7 +381,7 @@ export function InventoryBoard({
                 </td>
               </tr>
             ) : (
-              displayed.map((row) => {
+              paged.map((row) => {
                 const located = locateScore(row, locateQuery) > 0;
                 return (
                 <tr
@@ -447,6 +461,56 @@ export function InventoryBoard({
           </tbody>
         </table>
       </div>
+      {!loading && displayed.length > 0 ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
+          <p>
+            {displayed.length === 1
+              ? "1 máquina"
+              : `${displayed.length} máquinas`}
+            {pageCount > 1 ? ` · página ${currentPage} de ${pageCount}` : ""}
+          </p>
+          {pageCount > 1 ? (
+            <div className="flex items-center gap-1">
+              <Button
+                type="button"
+                variant="outline"
+                size="icon-sm"
+                disabled={currentPage <= 1}
+                aria-label="Página anterior"
+                onClick={() => setPage((current) => Math.max(1, current - 1))}
+              >
+                <ChevronLeft />
+              </Button>
+              {Array.from({ length: pageCount }, (_, index) => index + 1).map(
+                (number) => (
+                  <Button
+                    key={number}
+                    type="button"
+                    variant={number === currentPage ? "default" : "outline"}
+                    size="icon-sm"
+                    aria-label={`Página ${number}`}
+                    onClick={() => setPage(number)}
+                  >
+                    {number}
+                  </Button>
+                )
+              )}
+              <Button
+                type="button"
+                variant="outline"
+                size="icon-sm"
+                disabled={currentPage >= pageCount}
+                aria-label="Próxima página"
+                onClick={() =>
+                  setPage((current) => Math.min(pageCount, current + 1))
+                }
+              >
+                <ChevronRight />
+              </Button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
