@@ -6,7 +6,8 @@ import { isAssetKind } from "@/config/inventario";
 import { db } from "@/db";
 import { asset, assetInventory } from "@/db/schema";
 import { assetByAgentToken, bearerToken } from "@/lib/agent-auth";
-import { lanIpFromInventory, pickLanAdapter } from "@/lib/lan-ip";
+import { pickLanAdapter } from "@/lib/lan-ip";
+import { encryptSecret } from "@/lib/vault-crypto";
 
 const schema = z.object({
   agentVersion: z.string().optional(),
