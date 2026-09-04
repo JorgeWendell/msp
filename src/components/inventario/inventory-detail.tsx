@@ -207,10 +207,27 @@ export function InventoryDetail({ id }: { id: string }) {
               id="asset-client"
               name={clientLocked ? undefined : "clientId"}
               className="h-9"
-              defaultValue={asset.clientId}
+              value={asset.clientId}
               disabled={clientLocked}
               required
+              onChange={(event) =>
+                setAsset((current) =>
+                  current
+                    ? {
+                        ...current,
+                        clientId: event.target.value,
+                        clientName:
+                          clients.find((item) => item.id === event.target.value)
+                            ?.name ?? current.clientName,
+                      }
+                    : current
+                )
+              }
             >
+              {asset.clientId &&
+              !clients.some((item) => item.id === asset.clientId) ? (
+                <option value={asset.clientId}>{asset.clientName}</option>
+              ) : null}
               {clients
                 .filter((item) => item.active || item.id === asset.clientId)
                 .map((item) => (

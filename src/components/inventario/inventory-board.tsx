@@ -1,6 +1,6 @@
 "use client";
 
-import { EllipsisVertical, Loader2, Monitor, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, EllipsisVertical, Loader2, Monitor, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -84,6 +84,48 @@ function locateScore(row: AssetRow, query: string) {
   return best;
 }
 
+type SortKey = "hostname" | "clientName" | "kind" | "os" | "ip" | "agentStatus";
+
+function sortValue(row: AssetRow, key: SortKey) {
+  if (key === "kind") return assetLabel(assetKinds, row.kind);
+  if (key === "agentStatus") return assetLabel(agentStatuses, row.agentStatus);
+  return row[key] ?? "";
+}
+
+function SortHeader({
+  label,
+  column,
+  sortKey,
+  sortDir,
+  onSort,
+}: {
+  label: string;
+  column: SortKey;
+  sortKey: SortKey | null;
+  sortDir: "asc" | "desc";
+  onSort: (column: SortKey) => void;
+}) {
+  const active = sortKey === column;
+  return (
+    <th className="px-3 py-2.5 font-medium">
+      <button
+        type="button"
+        className="inline-flex items-center gap-1 hover:text-foreground"
+        onClick={() => onSort(column)}
+      >
+        {label}
+        {active ? (
+          sortDir === "asc" ? (
+            <ArrowUp className="size-3.5" />
+          ) : (
+            <ArrowDown className="size-3.5" />
+          )
+        ) : null}
+      </button>
+    </th>
+  );
+}
+
 export function InventoryBoard({
   initialAgentStatus = "",
 }: {
@@ -100,36 +142,32 @@ export function InventoryBoard({
   );
   const [clientId, setClientId] = useState("");
   const [locate, setLocate] = useState("");
-  const [colHostname, setColHostname] = useState("");
-  const [colClient, setColClient] = useState("");
-  const [colKind, setColKind] = useState("");
-  const [colOs, setColOs] = useState("");
-  const [colIp, setColIp] = useState("");
-  const [colAgent, setColAgent] = useState(initialAgentStatus);
+  const [sortKey, setSortKey] = useState<SortKey | null>(null);
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [form, setForm] = useState(emptyForm);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const locateQuery = locate.trim().toLowerCase();
 
   const displayed = useMemo(() => {
-    const hostname = colHostname.trim().toLowerCase();
-    const client = colClient.trim().toLowerCase();
-    const os = colOs.trim().toLowerCase();
-    const ip = colIp.trim().toLowerCase();
-    const filtered = rows.filter((row) => {
-      if (hostname && !row.hostname.toLowerCase().includes(hostname)) return false;
-      if (client && !row.clientName.toLowerCase().includes(client)) return false;
-      if (colKind && row.kind !== colKind) return false;
-      if (os && !(row.os ?? "").toLowerCase().includes(os)) return false;
-      if (ip && !(row.ip ?? "").toLowerCase().includes(ip)) return false;
-      if (colAgent && row.agentStatus !== colAgent) return false;
-      return true;
+    const filtered = initialAgentStatus
+      ? rows.filter((row) => row.agentStatus === initialAgentStatus)
+      : rows;
+    return [...filtered].sort((a, b) => {
+      if (locateQuery) {
+        const located = locateScore(b, locateQuery) - locateScore(a, locateQuery);
+        if (located) return located;
+      }
+      if (!sortKey) return 0;
+      const left = String(sortValue(a, sortKey)).toLowerCase();
+      const right = String(sortValue(b, sortKey)).toLowerCase();
+      const cmp = left.localeCompare(right, "pt-BR", {
+        numeric: true,
+        sensitivity: "base",
+      });
+      return sortDir === "asc" ? cmp : -cmp;
     });
-    if (!locateQuery) return filtered;
-    return [...filtered].sort(
-      (a, b) => locateScore(b, locateQuery) - locateScore(a, locateQuery)
-    );
-  }, [rows, locateQuery, colHostname, colClient, colKind, colOs, colIp, colAgent]);
+  }, [rows, locateQuery, sortKey, sortDir, initialAgentStatus]);
 
   const locatedCount = locateQuery
     ? displayed.filter((row) => locateScore(row, locateQuery) > 0).length
@@ -218,6 +256,15 @@ export function InventoryBoard({
     await load();
   }
 
+  function handleSort(column: SortKey) {
+    if (sortKey === column) {
+      setSortDir((current) => (current === "asc" ? "desc" : "asc"));
+      return;
+    }
+    setSortKey(column);
+    setSortDir("asc");
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -259,87 +306,49 @@ export function InventoryBoard({
         <table className="w-full min-w-[880px] text-sm">
           <thead className="bg-muted/50 text-left text-xs text-muted-foreground">
             <tr>
-              <th className="px-3 py-2.5 font-medium">Hostname</th>
-              <th className="px-3 py-2.5 font-medium">Cliente</th>
-              <th className="px-3 py-2.5 font-medium">Tipo</th>
-              <th className="px-3 py-2.5 font-medium">SO</th>
-              <th className="px-3 py-2.5 font-medium">IP</th>
-              <th className="px-3 py-2.5 font-medium">Agente</th>
+              <SortHeader
+                label="Hostname"
+                column="hostname"
+                sortKey={sortKey}
+                sortDir={sortDir}
+                onSort={handleSort}
+              />
+              <SortHeader
+                label="Cliente"
+                column="clientName"
+                sortKey={sortKey}
+                sortDir={sortDir}
+                onSort={handleSort}
+              />
+              <SortHeader
+                label="Tipo"
+                column="kind"
+                sortKey={sortKey}
+                sortDir={sortDir}
+                onSort={handleSort}
+              />
+              <SortHeader
+                label="SO"
+                column="os"
+                sortKey={sortKey}
+                sortDir={sortDir}
+                onSort={handleSort}
+              />
+              <SortHeader
+                label="IP"
+                column="ip"
+                sortKey={sortKey}
+                sortDir={sortDir}
+                onSort={handleSort}
+              />
+              <SortHeader
+                label="Agente"
+                column="agentStatus"
+                sortKey={sortKey}
+                sortDir={sortDir}
+                onSort={handleSort}
+              />
               <th className="px-3 py-2.5 font-medium">Ações</th>
-            </tr>
-            <tr className="border-t bg-background">
-              <th className="px-2 py-1.5 font-normal">
-                <Input
-                  className="h-8 text-xs"
-                  value={colHostname}
-                  placeholder="Filtrar..."
-                  onChange={(event) => setColHostname(event.target.value)}
-                />
-              </th>
-              <th className="px-2 py-1.5 font-normal">
-                {restrictedToClientId ? (
-                  <Input
-                    className="h-8 text-xs"
-                    value={
-                      clients.find((item) => item.id === restrictedToClientId)
-                        ?.name ?? ""
-                    }
-                    disabled
-                  />
-                ) : (
-                  <Input
-                    className="h-8 text-xs"
-                    value={colClient}
-                    placeholder="Filtrar..."
-                    onChange={(event) => setColClient(event.target.value)}
-                  />
-                )}
-              </th>
-              <th className="px-2 py-1.5 font-normal">
-                <NativeSelect
-                  className="h-8 text-xs"
-                  value={colKind}
-                  onChange={(event) => setColKind(event.target.value)}
-                >
-                  <option value="">Todos</option>
-                  {assetKinds.map((item) => (
-                    <option key={item.value} value={item.value}>
-                      {item.label}
-                    </option>
-                  ))}
-                </NativeSelect>
-              </th>
-              <th className="px-2 py-1.5 font-normal">
-                <Input
-                  className="h-8 text-xs"
-                  value={colOs}
-                  placeholder="Filtrar..."
-                  onChange={(event) => setColOs(event.target.value)}
-                />
-              </th>
-              <th className="px-2 py-1.5 font-normal">
-                <Input
-                  className="h-8 text-xs"
-                  value={colIp}
-                  placeholder="Filtrar..."
-                  onChange={(event) => setColIp(event.target.value)}
-                />
-              </th>
-              <th className="px-2 py-1.5 font-normal">
-                <NativeSelect
-                  className="h-8 text-xs"
-                  value={colAgent}
-                  onChange={(event) => setColAgent(event.target.value)}
-                >
-                  <option value="">Todos</option>
-                  {agentStatuses.map((item) => (
-                    <option key={item.value} value={item.value}>
-                      {item.label}
-                    </option>
-                  ))}
-                </NativeSelect>
-              </th>
-              <th className="px-2 py-1.5" />
             </tr>
           </thead>
           <tbody>
@@ -354,7 +363,7 @@ export function InventoryBoard({
                 <td className="px-3 py-8 text-center text-muted-foreground" colSpan={7}>
                   {rows.length === 0
                     ? "Nenhuma máquina ainda."
-                    : "Nenhuma máquina com esses filtros."}
+                    : "Nenhuma máquina encontrada."}
                 </td>
               </tr>
             ) : (
