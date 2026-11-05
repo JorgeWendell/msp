@@ -94,17 +94,24 @@ export const createCompany = protectedAction
     const slug = `${baseSlug}-${crypto.randomUUID().slice(0, 6)}`;
     const emailDomain = isPublic || !domain ? `personal:${userId}` : domain;
 
-    const created = await auth.api.createOrganization({
-      body: {
-        name: parsedInput.name,
-        slug,
-        emailDomain,
-        document: parsedInput.document || undefined,
-        tradeName: parsedInput.tradeName || undefined,
-        phone: parsedInput.phone || undefined,
-      },
-      headers: await headers(),
-    });
+    let created;
+    try {
+      created = await auth.api.createOrganization({
+        body: {
+          name: parsedInput.name,
+          slug,
+          emailDomain,
+          document: parsedInput.document || undefined,
+          tradeName: parsedInput.tradeName || undefined,
+          phone: parsedInput.phone || undefined,
+        },
+        headers: await headers(),
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Não foi possível criar a empresa.";
+      throw new ActionError(message);
+    }
 
     if (!created) {
       throw new ActionError("Não foi possível criar a empresa.");

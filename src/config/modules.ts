@@ -1,4 +1,5 @@
 import {
+  Activity,
   BookOpen,
   KeyRound,
   Monitor,
@@ -57,6 +58,14 @@ export const mspModules: MspModule[] = [
     href: "/conhecimento",
     icon: BookOpen,
   },
+  {
+    slug: "monitoramento",
+    code: "06",
+    title: "Monitoramento",
+    description: "Hosts do Zabbix: CPU, memória, disco e rede.",
+    href: "/monitoramento",
+    icon: Activity,
+  },
 ];
 
 export function getModuleBySlug(slug: string) {
@@ -103,7 +112,8 @@ export const accessPresets: {
   {
     value: "todos",
     label: "Todos os módulos",
-    description: "O perfil inicial vale para Cadastros, Tickets, Inventário, Cofre e Conhecimento.",
+    description:
+      "O perfil inicial vale para Cadastros, Tickets, Inventário, Cofre, Conhecimento e Monitoramento.",
   },
   {
     value: "inventario",

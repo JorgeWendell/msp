@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { createAgentToken, isAssetKind } from "@/config/inventario";
+import { createAgentToken, isAssetKind, monitorsInZabbix } from "@/config/inventario";
 import { db } from "@/db";
 import { asset, client } from "@/db/schema";
 import { normalizeClientCode } from "@/lib/client-code";
@@ -82,6 +82,7 @@ export async function POST(request: Request) {
       id: asset.id,
       agentToken: asset.agentToken,
       hostname: asset.hostname,
+      zabbixHostId: asset.zabbixHostId,
     })
     .from(asset)
     .where(existingFilters)
@@ -103,6 +104,18 @@ export async function POST(request: Request) {
         updatedAt: now,
       })
       .where(eq(asset.id, existing.id));
+
+    void syncZabbixHost({
+      assetId: existing.id,
+      organizationId: ownedClient.organizationId,
+      clientId: ownedClient.id,
+      clientName: ownedClient.name,
+      hostname,
+      ip: parsed.data.ip,
+      os: parsed.data.os,
+      kind,
+      zabbixHostId: existing.zabbixHostId,
+    });
 
     return NextResponse.json({
       assetId: existing.id,
@@ -133,6 +146,17 @@ export async function POST(request: Request) {
     updatedAt: now,
   });
 
+  void syncZabbixHost({
+    assetId: id,
+    organizationId: ownedClient.organizationId,
+    clientId: ownedClient.id,
+    clientName: ownedClient.name,
+    hostname,
+    ip: parsed.data.ip,
+    os: parsed.data.os,
+    kind,
+  });
+
   return NextResponse.json({
     assetId: id,
     agentToken,
@@ -140,4 +164,34 @@ export async function POST(request: Request) {
     clientName: ownedClient.name,
     clientCode: code,
   });
+}
+
+async function syncZabbixHost(input: {
+  assetId: string;
+  organizationId: string;
+  clientId: string;
+  clientName: string;
+  hostname: string;
+  ip?: string;
+  os?: string;
+  kind: string;
+  zabbixHostId?: string | null;
+}) {
+  if (!monitorsInZabbix(input.kind)) return;
+  try {
+    const { ensureZabbixHost } = await import("@/lib/zabbix");
+    const synced = await ensureZabbixHost({
+      ...input,
+      zabbixHostId: input.zabbixHostId ?? null,
+      active: true,
+    });
+    if (synced.hostid) {
+      await db
+        .update(asset)
+        .set({ zabbixHostId: synced.hostid, updatedAt: new Date() })
+        .where(eq(asset.id, input.assetId));
+    }
+  } catch (error) {
+    console.error(error);
+  }
 }

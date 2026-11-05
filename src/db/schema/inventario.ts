@@ -39,12 +39,14 @@ export const asset = pgTable(
     agentToken: text("agent_token").notNull(),
     agentVersion: text("agent_version"),
     meshNodeId: text("mesh_node_id"),
+    zabbixHostId: text("zabbix_host_id"),
     lastSeenAt: timestamp("last_seen_at"),
     ...timestamps,
   },
   (table) => [
     uniqueIndex("asset_agent_token_uidx").on(table.agentToken),
     uniqueIndex("asset_mesh_node_id_uidx").on(table.meshNodeId),
+    uniqueIndex("asset_zabbix_host_id_uidx").on(table.zabbixHostId),
     index("asset_organizationId_idx").on(table.organizationId),
     index("asset_clientId_idx").on(table.clientId),
   ]

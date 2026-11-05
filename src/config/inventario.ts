@@ -50,3 +50,7 @@ export function formatAssetDate(value: Date | string | null | undefined) {
 export function createAgentToken() {
   return crypto.randomUUID().replaceAll("-", "");
 }
+
+export function monitorsInZabbix(kind: string) {
+  return kind === "servidor" || kind === "rede";
+}

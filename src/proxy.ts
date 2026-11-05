@@ -5,6 +5,12 @@ const AUTH_PATHS = new Set(["/login", "/signup"]);
 
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  const isServerAction =
+    request.headers.has("next-action") || request.headers.has("Next-Action");
+  if (isServerAction) {
+    return NextResponse.next();
+  }
+
   const sessionCookie = getSessionCookie(request);
   const isAuthPath = AUTH_PATHS.has(pathname);
 

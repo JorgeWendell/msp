@@ -244,7 +244,11 @@ export function InventoryBoard({
       toast.error(result.serverError);
       return;
     }
-    toast.success("Máquina cadastrada. O token do agente já está pronto.");
+    if (result.data?.zabbixWarning) {
+      toast.warning(result.data.zabbixWarning);
+    } else {
+      toast.success("Máquina cadastrada. O token do agente já está pronto.");
+    }
     setOpen(false);
     if (result.data?.id) {
       router.push(`/inventario/${result.data.id}`);

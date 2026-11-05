@@ -27,7 +27,15 @@ export default async function ModulePage({
   const { module: slug } = await params;
   const module = getModuleBySlug(slug);
 
-  if (!module || slug === "cadastros" || slug === "tickets" || slug === "inventario" || slug === "cofre" || slug === "conhecimento") {
+  if (
+    !module ||
+    slug === "cadastros" ||
+    slug === "tickets" ||
+    slug === "inventario" ||
+    slug === "cofre" ||
+    slug === "conhecimento" ||
+    slug === "monitoramento"
+  ) {
     notFound();
   }
 

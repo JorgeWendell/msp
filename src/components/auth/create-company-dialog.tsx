@@ -49,12 +49,19 @@ export function CreateCompanyDialog({
     setPending(true);
     setError(null);
 
-    const result = await createCompany({
-      name,
-      tradeName: tradeName || undefined,
-      document: document || undefined,
-      phone: phone || undefined,
-    });
+    let result;
+    try {
+      result = await createCompany({
+        name,
+        tradeName: tradeName || undefined,
+        document: document || undefined,
+        phone: phone || undefined,
+      });
+    } catch {
+      setPending(false);
+      setError("Não foi possível criar a empresa. Tente novamente.");
+      return;
+    }
 
     setPending(false);
 

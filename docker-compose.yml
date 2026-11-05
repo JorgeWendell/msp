@@ -69,6 +69,10 @@ services:
       MESHCENTRAL_PASS: ${MESHCENTRAL_PASS:-}
       MESHCENTRAL_DIR: ${MESHCENTRAL_DIR:-}
       MESHCENTRAL_AGENT_PATH: ${MESHCENTRAL_AGENT_PATH:-private/mesh/AdelMsp.Remote.exe}
+      ZABBIX_URL: ${ZABBIX_URL:-http://192.168.15.11/api_jsonrpc.php}
+      ZABBIX_TOKEN: ${ZABBIX_TOKEN:-}
+      ZABBIX_USER: ${ZABBIX_USER:-}
+      ZABBIX_PASSWORD: ${ZABBIX_PASSWORD:-}
     volumes:
       - ./private/mesh:/app/private/mesh:ro
     extra_hosts:
@@ -137,6 +141,36 @@ services:
       - traefik.http.routers.adelmsp-mesh-http.middlewares=adelmsp-mesh-https-redirect
       - traefik.http.middlewares.adelmsp-mesh-https-redirect.redirectscheme.scheme=https
       - traefik.http.middlewares.adelmsp-mesh-https-redirect.redirectscheme.permanent=true
+
+  zabbix-edge:
+    image: nginx:1.27-alpine
+    container_name: adelmsp-zabbix-edge
+    restart: unless-stopped
+    volumes:
+      - ./deploy/zabbix/traefik-nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    expose:
+      - "80"
+    networks:
+      - adelmsp-network
+      - traefik
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=${TRAEFIK_NETWORK:-proxy}
+      - traefik.http.routers.adelmsp-zabbix.rule=Host(`${ZABBIX_DOMAIN:-zabbix.adelweb.com.br}`)
+      - traefik.http.routers.adelmsp-zabbix.entrypoints=websecure
+      - traefik.http.routers.adelmsp-zabbix.tls=true
+      - traefik.http.routers.adelmsp-zabbix.tls.certresolver=letsencrypt
+      - traefik.http.routers.adelmsp-zabbix.service=adelmsp-zabbix
+      - traefik.http.services.adelmsp-zabbix.loadbalancer.server.port=80
+      - traefik.http.services.adelmsp-zabbix.loadbalancer.server.scheme=http
+      - traefik.http.services.adelmsp-zabbix.loadbalancer.passHostHeader=true
+      - traefik.http.routers.adelmsp-zabbix-http.rule=Host(`${ZABBIX_DOMAIN:-zabbix.adelweb.com.br}`)
+      - traefik.http.routers.adelmsp-zabbix-http.entrypoints=web
+      - traefik.http.routers.adelmsp-zabbix-http.middlewares=adelmsp-zabbix-https-redirect
+      - traefik.http.middlewares.adelmsp-zabbix-https-redirect.redirectscheme.scheme=https
+      - traefik.http.middlewares.adelmsp-zabbix-https-redirect.redirectscheme.permanent=true
 
 networks:
   adelmsp-network:

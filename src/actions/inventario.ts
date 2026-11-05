@@ -7,10 +7,12 @@ import {
   createAgentToken,
   isAssetKind,
   isAgentStatus,
+  monitorsInZabbix,
 } from "@/config/inventario";
 import { db } from "@/db";
 import { asset, assetInventory, client } from "@/db/schema";
 import { inventoryScopeClientId } from "@/lib/access";
+import { disableZabbixHost, ensureZabbixHost } from "@/lib/zabbix";
 import {
   expireStaleAgentStatus,
   resolveAgentStatus,
@@ -160,6 +162,7 @@ export const getAsset = inventarioAction
         agentToken: asset.agentToken,
         agentVersion: asset.agentVersion,
         meshNodeId: asset.meshNodeId,
+        zabbixHostId: asset.zabbixHostId,
         lastSeenAt: asset.lastSeenAt,
         createdAt: asset.createdAt,
         updatedAt: asset.updatedAt,
@@ -205,7 +208,6 @@ export const saveAsset = inventarioAction
       throw new ActionError("Você só pode cadastrar máquinas deste cliente.");
     }
     const clientId = scope ?? parsedInput.clientId;
-    await ownedClient(ctx.organizationId, clientId);
 
     const payload = {
       clientId,
@@ -221,8 +223,14 @@ export const saveAsset = inventarioAction
       updatedAt: new Date(),
     };
 
+    const clientRow = await ownedClient(ctx.organizationId, clientId);
+
+    let id = parsedInput.id;
+    let currentZabbixId: string | null = null;
+
     if (parsedInput.id) {
-      await ownedAsset(ctx.organizationId, parsedInput.id, scope);
+      const owned = await ownedAsset(ctx.organizationId, parsedInput.id, scope);
+      currentZabbixId = owned.zabbixHostId;
       await db
         .update(asset)
         .set(payload)
@@ -232,29 +240,71 @@ export const saveAsset = inventarioAction
             eq(asset.organizationId, ctx.organizationId)
           )
         );
-      return { id: parsedInput.id };
+    } else {
+      id = crypto.randomUUID();
+      await db.insert(asset).values({
+        id,
+        organizationId: ctx.organizationId,
+        agentToken: createAgentToken(),
+        agentStatus: "desconhecido",
+        createdAt: new Date(),
+        ...payload,
+      });
     }
 
-    const id = crypto.randomUUID();
-    await db.insert(asset).values({
-      id,
-      organizationId: ctx.organizationId,
-      agentToken: createAgentToken(),
-      agentStatus: "desconhecido",
-      createdAt: new Date(),
-      ...payload,
-    });
-    return { id };
+    if (!id) {
+      throw new ActionError("Não foi possível gravar a máquina.");
+    }
+
+    let zabbixWarning: string | undefined;
+    if (monitorsInZabbix(parsedInput.kind) || currentZabbixId) {
+      try {
+        const synced = await ensureZabbixHost({
+          assetId: id,
+          organizationId: ctx.organizationId,
+          clientId,
+          clientName: clientRow.name,
+          hostname: parsedInput.hostname,
+          ip: parsedInput.ip,
+          os: parsedInput.os,
+          kind: parsedInput.kind,
+          zabbixHostId: currentZabbixId,
+          active: parsedInput.active ?? true,
+        });
+        if (synced.hostid && synced.hostid !== currentZabbixId) {
+          await db
+            .update(asset)
+            .set({ zabbixHostId: synced.hostid, updatedAt: new Date() })
+            .where(eq(asset.id, id));
+        }
+        zabbixWarning = synced.warning;
+      } catch (error) {
+        console.error(error);
+        zabbixWarning =
+          error instanceof Error
+            ? error.message
+            : "Não foi possível falar com o Zabbix.";
+      }
+    }
+
+    return { id, zabbixWarning };
   });
 
 export const deleteAsset = inventarioAction
   .inputSchema(z.object({ id: z.string() }))
   .action(async ({ parsedInput, ctx }) => {
-    await ownedAsset(
+    const owned = await ownedAsset(
       ctx.organizationId,
       parsedInput.id,
       inventoryScopeClientId(ctx.access)
     );
+    if (owned.zabbixHostId) {
+      try {
+        await disableZabbixHost(owned.zabbixHostId);
+      } catch (error) {
+        console.error(error);
+      }
+    }
     await db
       .delete(asset)
       .where(

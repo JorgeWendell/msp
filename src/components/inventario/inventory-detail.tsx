@@ -44,6 +44,7 @@ type Detail = {
   agentToken: string;
   agentVersion: string | null;
   lastSeenAt: Date | string | null;
+  zabbixHostId: string | null;
   createdAt: Date | string;
   updatedAt: Date | string;
 };
@@ -105,7 +106,11 @@ export function InventoryDetail({ id }: { id: string }) {
       toast.error(result.serverError);
       return;
     }
-    toast.success("Máquina atualizada.");
+    if (result.data?.zabbixWarning) {
+      toast.warning(result.data.zabbixWarning);
+    } else {
+      toast.success("Máquina atualizada.");
+    }
     await load();
   }
 
@@ -180,6 +185,9 @@ export function InventoryDetail({ id }: { id: string }) {
           >
             {assetLabel(agentStatuses, asset.agentStatus)}
           </Badge>
+          {asset.zabbixHostId ? (
+            <Badge variant="secondary">Zabbix</Badge>
+          ) : null}
         </div>
       </div>
 

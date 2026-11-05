@@ -5,6 +5,7 @@ import {
   defaultProfileFromRole,
   erpModules,
   getModuleBySlug,
+  isInventoryOnlyProfiles,
   isModuleProfile,
   moduleProfileRank,
   profilesForPreset,
@@ -44,7 +45,10 @@ export async function ensureMemberModules(
   fallback: ModuleProfile
 ) {
   const existing = await db
-    .select({ moduleSlug: memberModule.moduleSlug })
+    .select({
+      moduleSlug: memberModule.moduleSlug,
+      profile: memberModule.profile,
+    })
     .from(memberModule)
     .where(
       and(
@@ -55,6 +59,17 @@ export async function ensureMemberModules(
   const have = new Set(existing.map((row) => row.moduleSlug));
   const missing = erpModules.filter((item) => !have.has(item.slug));
   if (!missing.length) return;
+
+  const bySlug = Object.fromEntries(
+    existing.map((row) => [row.moduleSlug, asProfile(row.profile, "negado")])
+  );
+  const inventoryOnly = isInventoryOnlyProfiles(
+    erpModules.map((item) => ({
+      slug: item.slug,
+      profile: bySlug[item.slug] ?? "negado",
+    }))
+  );
+  const profile = inventoryOnly ? "negado" : fallback;
   const now = new Date();
   await db.insert(memberModule).values(
     missing.map((item) => ({
@@ -62,7 +77,7 @@ export async function ensureMemberModules(
       organizationId,
       memberId,
       moduleSlug: item.slug,
-      profile: fallback,
+      profile,
       createdAt: now,
       updatedAt: now,
     }))
