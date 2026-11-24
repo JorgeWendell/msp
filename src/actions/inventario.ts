@@ -1,6 +1,6 @@
 "use server";
 
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 
 import {
@@ -78,6 +78,7 @@ export const listAssets = inventarioAction
     z.object({
       clientId: z.string().optional(),
       kind: z.string().optional(),
+      kinds: z.array(z.string()).optional(),
       agentStatus: z.string().optional(),
     })
   )
@@ -91,7 +92,10 @@ export const listAssets = inventarioAction
     if (clientId) {
       filters.push(eq(asset.clientId, clientId));
     }
-    if (parsedInput.kind && isAssetKind(parsedInput.kind)) {
+    const kinds = (parsedInput.kinds ?? []).filter(isAssetKind);
+    if (kinds.length > 0) {
+      filters.push(inArray(asset.kind, kinds));
+    } else if (parsedInput.kind && isAssetKind(parsedInput.kind)) {
       filters.push(eq(asset.kind, parsedInput.kind));
     }
     await expireStaleAgentStatus(ctx.organizationId);

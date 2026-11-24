@@ -29,7 +29,7 @@ export function RemoteDesktop({ id }: { id: string }) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
         <p className="text-sm text-muted-foreground">{error}</p>
-        <Link href="/inventario" className="text-sm font-medium text-primary hover:underline">
+        <Link href="/inventario?grupo=maquinas" className="text-sm font-medium text-primary hover:underline">
           Voltar ao inventário
         </Link>
       </div>

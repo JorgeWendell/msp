@@ -31,6 +31,9 @@ import {
   agentStatuses,
   assetKinds,
   assetLabel,
+  composePrinterNotes,
+  getInventoryGroup,
+  networkHostnames,
 } from "@/config/inventario";
 type AssetRow = {
   id: string;
@@ -62,6 +65,7 @@ const emptyForm = {
   mac: "",
   location: "",
   notes: "",
+  toner: "",
 };
 
 function locateScore(row: AssetRow, query: string) {
@@ -130,10 +134,18 @@ function SortHeader({
 
 export function InventoryBoard({
   initialAgentStatus = "",
+  grupo,
 }: {
   initialAgentStatus?: string;
+  grupo?: string;
 }) {
   const router = useRouter();
+  const group = getInventoryGroup(grupo);
+  const isPrinters = group.slug === "impressoras";
+  const isNetwork = group.slug === "rede";
+  const groupKinds = assetKinds.filter((item) =>
+    (group.kinds as readonly string[]).includes(item.value)
+  );
   const [rows, setRows] = useState<AssetRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
@@ -147,7 +159,7 @@ export function InventoryBoard({
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [page, setPage] = useState(1);
-  const [form, setForm] = useState(emptyForm);
+  const [form, setForm] = useState({ ...emptyForm, kind: group.defaultKind });
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const locateQuery = locate.trim().toLowerCase();
@@ -181,7 +193,7 @@ export function InventoryBoard({
 
   useEffect(() => {
     setPage(1);
-  }, [locateQuery, sortKey, sortDir, initialAgentStatus]);
+  }, [locateQuery, sortKey, sortDir, initialAgentStatus, group.slug]);
 
   const locatedCount = locateQuery
     ? displayed.filter((row) => locateScore(row, locateQuery) > 0).length
@@ -191,6 +203,7 @@ export function InventoryBoard({
     setLoading(true);
     const result = await listAssets({
       clientId: clientId || undefined,
+      kinds: [...group.kinds],
     });
     setLoading(false);
     if (result.serverError) {
@@ -198,11 +211,15 @@ export function InventoryBoard({
       return;
     }
     setRows((result.data as AssetRow[]) ?? []);
-  }, [clientId]);
+  }, [clientId, group.slug]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    setForm((current) => ({ ...current, kind: group.defaultKind }));
+  }, [group.defaultKind]);
 
   useEffect(() => {
     void listInventoryClients().then((result) => {
@@ -220,6 +237,8 @@ export function InventoryBoard({
   function openCreate() {
     setForm({
       ...emptyForm,
+      kind: group.defaultKind,
+      hostname: isNetwork ? "Pfsense" : "",
       clientId: restrictedToClientId || "",
     });
     setOpen(true);
@@ -237,7 +256,9 @@ export function InventoryBoard({
       ip: form.ip || undefined,
       mac: form.mac || undefined,
       location: form.location || undefined,
-      notes: form.notes || undefined,
+      notes: isPrinters
+        ? composePrinterNotes(form.toner, form.notes) || undefined
+        : form.notes || undefined,
     });
     setSaving(false);
     if (result.serverError) {
@@ -247,7 +268,7 @@ export function InventoryBoard({
     if (result.data?.zabbixWarning) {
       toast.warning(result.data.zabbixWarning);
     } else {
-      toast.success("Máquina cadastrada. O token do agente já está pronto.");
+      toast.success(group.createLabel);
     }
     setOpen(false);
     if (result.data?.id) {
@@ -287,11 +308,8 @@ export function InventoryBoard({
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="font-heading text-2xl tracking-tight">Inventário</h1>
-          <p className="text-sm text-muted-foreground">
-            Cadastre a máquina pelo cliente. O app instalado entra depois, com o
-            token já gerado.
-          </p>
+          <h1 className="font-heading text-2xl tracking-tight">{group.title}</h1>
+          <p className="text-sm text-muted-foreground">{group.description}</p>
         </div>
         <Button className="h-9 px-3" onClick={openCreate}>
           <Plus />
@@ -325,7 +343,7 @@ export function InventoryBoard({
           <thead className="bg-muted/50 text-left text-xs text-muted-foreground">
             <tr>
               <SortHeader
-                label="Hostname"
+                label={isPrinters ? "Nome" : isNetwork ? "Equipamento" : "Hostname"}
                 column="hostname"
                 sortKey={sortKey}
                 sortDir={sortDir}
@@ -346,14 +364,14 @@ export function InventoryBoard({
                 onSort={handleSort}
               />
               <SortHeader
-                label="SO"
+                label={isPrinters ? "Modelo" : isNetwork ? "Versão" : "SO"}
                 column="os"
                 sortKey={sortKey}
                 sortDir={sortDir}
                 onSort={handleSort}
               />
               <SortHeader
-                label="IP"
+                label={isNetwork ? "IP LAN" : "IP"}
                 column="ip"
                 sortKey={sortKey}
                 sortDir={sortDir}
@@ -380,8 +398,8 @@ export function InventoryBoard({
               <tr>
                 <td className="px-3 py-8 text-center text-muted-foreground" colSpan={7}>
                   {rows.length === 0
-                    ? "Nenhuma máquina ainda."
-                    : "Nenhuma máquina encontrada."}
+                    ? group.empty
+                    : "Nenhum registro encontrado neste grupo."}
                 </td>
               </tr>
             ) : (
@@ -401,7 +419,12 @@ export function InventoryBoard({
                       {row.hostname}
                     </Link>
                     <p className="text-xs text-muted-foreground">
-                      {row.serial || "Sem serial"}
+                      {row.serial ||
+                        (isPrinters
+                          ? "Sem marca"
+                          : isNetwork
+                            ? "Sem acesso"
+                            : "Sem serial")}
                       {!row.active ? " · Inativa" : ""}
                     </p>
                   </td>
@@ -519,10 +542,8 @@ export function InventoryBoard({
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Nova máquina</DialogTitle>
-            <DialogDescription>
-              O cadastro já gera o token para o agente reportar status depois.
-            </DialogDescription>
+            <DialogTitle>{group.createTitle}</DialogTitle>
+            <DialogDescription>{group.createHint}</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleCreate} className="grid gap-4">
             <FieldGroup className="grid gap-3 sm:grid-cols-2">
@@ -564,33 +585,65 @@ export function InventoryBoard({
                     }))
                   }
                 >
-                  {assetKinds.map((item) => (
+                  {groupKinds.map((item) => (
                     <option key={item.value} value={item.value}>
                       {item.label}
                     </option>
                   ))}
                 </NativeSelect>
               </Field>
-              <Field>
-                <FieldLabel htmlFor="asset-hostname">Hostname</FieldLabel>
-                <Input
-                  id="asset-hostname"
-                  className="h-9"
-                  required
-                  value={form.hostname}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      hostname: event.target.value,
-                    }))
-                  }
-                />
+                  <Field>
+                <FieldLabel htmlFor="asset-hostname">
+                  {isPrinters ? "Nome" : isNetwork ? "Equipamento" : "Hostname"}
+                </FieldLabel>
+                {isNetwork ? (
+                  <NativeSelect
+                    id="asset-hostname"
+                    className="h-9"
+                    required
+                    value={form.hostname}
+                    onChange={(event) =>
+                      setForm((current) => ({
+                        ...current,
+                        hostname: event.target.value,
+                      }))
+                    }
+                  >
+                    {networkHostnames.map((item) => (
+                      <option key={item.value} value={item.value}>
+                        {item.label}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                ) : (
+                  <Input
+                    id="asset-hostname"
+                    className="h-9"
+                    required
+                    value={form.hostname}
+                    onChange={(event) =>
+                      setForm((current) => ({
+                        ...current,
+                        hostname: event.target.value,
+                      }))
+                    }
+                  />
+                )}
               </Field>
               <Field>
-                <FieldLabel htmlFor="asset-serial">Serial</FieldLabel>
+                <FieldLabel htmlFor="asset-serial">
+                  {isPrinters ? "Marca" : isNetwork ? "Acesso" : "Serial"}
+                </FieldLabel>
                 <Input
                   id="asset-serial"
                   className="h-9"
+                  placeholder={
+                    isPrinters
+                      ? "HP, Epson, Brother..."
+                      : isNetwork
+                        ? "Usuário, VPN, URL..."
+                        : ""
+                  }
                   value={form.serial}
                   onChange={(event) =>
                     setForm((current) => ({
@@ -601,19 +654,50 @@ export function InventoryBoard({
                 />
               </Field>
               <Field>
-                <FieldLabel htmlFor="asset-os">Sistema operacional</FieldLabel>
+                <FieldLabel htmlFor="asset-os">
+                  {isPrinters
+                    ? "Modelo"
+                    : isNetwork
+                      ? "Versão"
+                      : "Sistema operacional"}
+                </FieldLabel>
                 <Input
                   id="asset-os"
                   className="h-9"
-                  placeholder="Windows 11, Ubuntu 24.04..."
+                  placeholder={
+                    isPrinters
+                      ? "LaserJet Pro M404dn..."
+                      : isNetwork
+                        ? "2.7.2, 7.16..."
+                        : "Windows 11, Ubuntu 24.04..."
+                  }
                   value={form.os}
                   onChange={(event) =>
                     setForm((current) => ({ ...current, os: event.target.value }))
                   }
                 />
               </Field>
+              {isPrinters ? (
+                <Field>
+                  <FieldLabel htmlFor="asset-toner">Cód. Toner/Tinta</FieldLabel>
+                  <Input
+                    id="asset-toner"
+                    className="h-9"
+                    placeholder="CF410A, 664, T664..."
+                    value={form.toner}
+                    onChange={(event) =>
+                      setForm((current) => ({
+                        ...current,
+                        toner: event.target.value,
+                      }))
+                    }
+                  />
+                </Field>
+              ) : null}
               <Field>
-                <FieldLabel htmlFor="asset-ip">IP</FieldLabel>
+                <FieldLabel htmlFor="asset-ip">
+                  {isNetwork ? "IP LAN" : "IP"}
+                </FieldLabel>
                 <Input
                   id="asset-ip"
                   className="h-9"
@@ -624,10 +708,13 @@ export function InventoryBoard({
                 />
               </Field>
               <Field>
-                <FieldLabel htmlFor="asset-mac">MAC</FieldLabel>
+                <FieldLabel htmlFor="asset-mac">
+                  {isNetwork ? "DDNS" : "MAC"}
+                </FieldLabel>
                 <Input
                   id="asset-mac"
                   className="h-9"
+                  placeholder={isNetwork ? "fw.cliente.example.com" : ""}
                   value={form.mac}
                   onChange={(event) =>
                     setForm((current) => ({ ...current, mac: event.target.value }))

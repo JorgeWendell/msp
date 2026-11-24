@@ -39,7 +39,7 @@ export const mspModules: MspModule[] = [
     code: "03",
     title: "Inventário",
     description: "Máquinas e ativos por cliente.",
-    href: "/inventario",
+    href: "/inventario?grupo=maquinas",
     icon: Monitor,
   },
   {

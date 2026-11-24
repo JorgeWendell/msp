@@ -23,7 +23,12 @@ import {
   agentStatuses,
   assetKinds,
   assetLabel,
+  composePrinterNotes,
   formatAssetDate,
+  inventoryGroupForKind,
+  inventoryGroupHref,
+  networkHostnameOptions,
+  parsePrinterNotes,
 } from "@/config/inventario";
 import { AssetInventory } from "@/components/inventario/asset-inventory";
 
@@ -87,6 +92,13 @@ export function InventoryDetail({ id }: { id: string }) {
     event.preventDefault();
     if (!asset) return;
     const data = new FormData(event.currentTarget);
+    const isPrinter = asset.kind === "impressora";
+    const notes = isPrinter
+      ? composePrinterNotes(
+          String(data.get("toner") || ""),
+          String(data.get("notes") || "")
+        )
+      : String(data.get("notes") || "");
     setSaving(true);
     const result = await saveAsset({
       id: asset.id,
@@ -98,7 +110,7 @@ export function InventoryDetail({ id }: { id: string }) {
       ip: String(data.get("ip") || "") || undefined,
       mac: String(data.get("mac") || "") || undefined,
       location: String(data.get("location") || "") || undefined,
-      notes: String(data.get("notes") || "") || undefined,
+      notes: notes || undefined,
       active: data.get("active") === "on",
     });
     setSaving(false);
@@ -149,7 +161,7 @@ export function InventoryDetail({ id }: { id: string }) {
       return;
     }
     toast.success("Máquina excluída.");
-    router.push("/inventario");
+    router.push(inventoryGroupHref(inventoryGroupForKind(asset.kind).slug));
   }
 
   if (loading || !asset) {
@@ -165,8 +177,11 @@ export function InventoryDetail({ id }: { id: string }) {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-            <Link href="/inventario" className="hover:underline">
-              Inventário
+            <Link
+              href={inventoryGroupHref(inventoryGroupForKind(asset.kind).slug)}
+              className="hover:underline"
+            >
+              {inventoryGroupForKind(asset.kind).label}
             </Link>{" "}
             · {asset.clientName}
           </p>
@@ -261,17 +276,45 @@ export function InventoryDetail({ id }: { id: string }) {
             </NativeSelect>
           </Field>
           <Field>
-            <FieldLabel htmlFor="asset-hostname">Hostname</FieldLabel>
-            <Input
-              id="asset-hostname"
-              name="hostname"
-              className="h-9"
-              required
-              defaultValue={asset.hostname}
-            />
+            <FieldLabel htmlFor="asset-hostname">
+              {asset.kind === "impressora"
+                ? "Nome"
+                : asset.kind === "rede"
+                  ? "Equipamento"
+                  : "Hostname"}
+            </FieldLabel>
+            {asset.kind === "rede" ? (
+              <NativeSelect
+                id="asset-hostname"
+                name="hostname"
+                className="h-9"
+                required
+                defaultValue={asset.hostname}
+              >
+                {networkHostnameOptions(asset.hostname).map((item) => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
+                  </option>
+                ))}
+              </NativeSelect>
+            ) : (
+              <Input
+                id="asset-hostname"
+                name="hostname"
+                className="h-9"
+                required
+                defaultValue={asset.hostname}
+              />
+            )}
           </Field>
           <Field>
-            <FieldLabel htmlFor="asset-serial">Serial</FieldLabel>
+            <FieldLabel htmlFor="asset-serial">
+              {asset.kind === "impressora"
+                ? "Marca"
+                : asset.kind === "rede"
+                  ? "Acesso"
+                  : "Serial"}
+            </FieldLabel>
             <Input
               id="asset-serial"
               name="serial"
@@ -280,7 +323,13 @@ export function InventoryDetail({ id }: { id: string }) {
             />
           </Field>
           <Field>
-            <FieldLabel htmlFor="asset-os">Sistema operacional</FieldLabel>
+            <FieldLabel htmlFor="asset-os">
+              {asset.kind === "impressora"
+                ? "Modelo"
+                : asset.kind === "rede"
+                  ? "Versão"
+                  : "Sistema operacional"}
+            </FieldLabel>
             <Input
               id="asset-os"
               name="os"
@@ -288,8 +337,21 @@ export function InventoryDetail({ id }: { id: string }) {
               defaultValue={asset.os ?? ""}
             />
           </Field>
+          {asset.kind === "impressora" ? (
+            <Field>
+              <FieldLabel htmlFor="asset-toner">Cód. Toner/Tinta</FieldLabel>
+              <Input
+                id="asset-toner"
+                name="toner"
+                className="h-9"
+                defaultValue={parsePrinterNotes(asset.notes).toner}
+              />
+            </Field>
+          ) : null}
           <Field>
-            <FieldLabel htmlFor="asset-ip">IP</FieldLabel>
+            <FieldLabel htmlFor="asset-ip">
+              {asset.kind === "rede" ? "IP LAN" : "IP"}
+            </FieldLabel>
             <Input
               id="asset-ip"
               name="ip"
@@ -298,7 +360,9 @@ export function InventoryDetail({ id }: { id: string }) {
             />
           </Field>
           <Field>
-            <FieldLabel htmlFor="asset-mac">MAC</FieldLabel>
+            <FieldLabel htmlFor="asset-mac">
+              {asset.kind === "rede" ? "DDNS" : "MAC"}
+            </FieldLabel>
             <Input
               id="asset-mac"
               name="mac"
@@ -321,7 +385,11 @@ export function InventoryDetail({ id }: { id: string }) {
               id="asset-notes"
               name="notes"
               className="min-h-20 w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-              defaultValue={asset.notes ?? ""}
+              defaultValue={
+                asset.kind === "impressora"
+                  ? parsePrinterNotes(asset.notes).notes
+                  : (asset.notes ?? "")
+              }
             />
           </Field>
           <label className="flex h-8 items-center gap-2 text-sm sm:col-span-2">

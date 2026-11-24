@@ -67,7 +67,7 @@ export default async function DashboardPage() {
       icon: UserX,
     },
     {
-      href: "/inventario?agentStatus=desconhecido",
+      href: "/inventario?grupo=maquinas&agentStatus=desconhecido",
       label: "Sem agente",
       hint: "Máquinas ainda sem o app",
       value: data?.withoutAgent ?? null,

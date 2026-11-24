@@ -19,7 +19,10 @@ export default async function InventarioPage({
 
   return (
     <div className="mx-auto grid max-w-6xl gap-5">
-      <InventoryBoard initialAgentStatus={firstParam(params.agentStatus)} />
+      <InventoryBoard
+        initialAgentStatus={firstParam(params.agentStatus)}
+        grupo={firstParam(params.grupo)}
+      />
     </div>
   );
 }

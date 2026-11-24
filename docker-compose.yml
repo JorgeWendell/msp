@@ -142,6 +142,16 @@ services:
       - traefik.http.middlewares.adelmsp-mesh-https-redirect.redirectscheme.scheme=https
       - traefik.http.middlewares.adelmsp-mesh-https-redirect.redirectscheme.permanent=true
 
+  zabbix-trapper:
+    image: alpine/socat
+    container_name: adelmsp-zabbix-trapper
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "10051:10051"
+    command: TCP-LISTEN:10051,fork,reuseaddr TCP:${ZABBIX_AGENT_IP:-192.168.15.11}:10051
+
   zabbix-edge:
     image: nginx:1.27-alpine
     container_name: adelmsp-zabbix-edge

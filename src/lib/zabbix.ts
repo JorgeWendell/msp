@@ -531,19 +531,14 @@ async function ensureGroup(name: string) {
 
 async function findTemplateId(os: string | null | undefined) {
   const windows = /win/i.test(os ?? "");
-  const wanted = windows
-    ? ["Windows by Zabbix agent active", "Windows by Zabbix agent"]
-    : ["Linux by Zabbix agent active", "Linux by Zabbix agent"];
   const found = await call<Array<{ templateid: string; name: string }>>("template.get", {
     output: ["templateid", "name"],
-    searchByAny: true,
-    search: { name: wanted },
+    search: { name: windows ? "Windows by Zabbix agent" : "Linux by Zabbix agent" },
   });
-  for (const name of wanted) {
-    const match = found.find((item) => item.name === name);
-    if (match) return match.templateid;
-  }
-  return found[0]?.templateid ?? null;
+  const active = found.find(
+    (item) => /active/i.test(item.name) && !/passive/i.test(item.name)
+  );
+  return active?.templateid ?? null;
 }
 
 function hostTags(input: EnsureZabbixHostInput) {
@@ -585,11 +580,13 @@ export async function ensureZabbixHost(input: EnsureZabbixHostInput) {
     });
     if (current[0]) {
       const kept = (current[0].tags ?? []).filter((tag) => !tag.tag?.startsWith("adelmsp."));
+      const templateid = await findTemplateId(input.os);
       await call("host.update", {
         hostid: input.zabbixHostId,
         name: input.hostname,
         status: 0,
         tags: [...kept, ...tags],
+        ...(templateid ? { templates: [{ templateid }] } : {}),
       });
       snapshotCache = null;
       return { hostid: input.zabbixHostId, warning: undefined as string | undefined };
@@ -615,10 +612,12 @@ export async function ensureZabbixHost(input: EnsureZabbixHostInput) {
 
   if (match) {
     const kept = (match.tags ?? []).filter((tag) => !tag.tag?.startsWith("adelmsp."));
+    const templateid = await findTemplateId(input.os);
     await call("host.update", {
       hostid: match.hostid,
       status: 0,
       tags: [...kept, ...tags],
+      ...(templateid ? { templates: [{ templateid }] } : {}),
     });
     snapshotCache = null;
     return { hostid: match.hostid, warning: undefined as string | undefined };

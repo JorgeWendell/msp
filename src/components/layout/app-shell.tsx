@@ -1,3 +1,5 @@
+import { Suspense } from "react";
+
 import { AppSidebar } from "@/components/layout/app-sidebar";
 import { UserMenu } from "@/components/layout/user-menu";
 
@@ -20,7 +22,9 @@ export function AppShell({
 }: AppShellProps) {
   return (
     <div className="flex min-h-svh bg-background">
-      <AppSidebar allowedModules={allowedModules} homeHref={homeHref} />
+      <Suspense fallback={null}>
+        <AppSidebar allowedModules={allowedModules} homeHref={homeHref} />
+      </Suspense>
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-16 items-center justify-between gap-4 border-b px-4 sm:px-6">
           <div className="min-w-0">
