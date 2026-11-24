@@ -59,7 +59,7 @@ const emptyForm = {
   clientId: "",
   hostname: "",
   serial: "",
-  kind: "desktop",
+  kind: "desktop" as string,
   os: "",
   ip: "",
   mac: "",
@@ -159,7 +159,10 @@ export function InventoryBoard({
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [page, setPage] = useState(1);
-  const [form, setForm] = useState({ ...emptyForm, kind: group.defaultKind });
+  const [form, setForm] = useState<typeof emptyForm>({
+    ...emptyForm,
+    kind: group.defaultKind,
+  });
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const locateQuery = locate.trim().toLowerCase();
