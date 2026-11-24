@@ -5,6 +5,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { getAssetInventory } from "@/actions/inventario";
+import {
+  AssetBrowserHistory,
+  type BrowserHistoryItem,
+} from "@/components/inventario/asset-browser-history";
 import { AssetTickets } from "@/components/inventario/asset-tickets";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,6 +29,7 @@ type Payload = {
   processes?: Record<string, unknown>[];
   services?: Record<string, unknown>[];
   events?: Record<string, unknown>[];
+  browserHistory?: BrowserHistoryItem[];
 };
 
 function text(value: unknown) {
@@ -414,9 +419,11 @@ function ServicesTab({ items }: { items: Record<string, unknown>[] }) {
 export function AssetInventory({
   assetId,
   clientId,
+  hostname,
 }: {
   assetId: string;
   clientId: string;
+  hostname: string;
 }) {
   const [payload, setPayload] = useState<Payload | null>(null);
   const [collectedAt, setCollectedAt] = useState<Date | string | null>(null);
@@ -458,6 +465,7 @@ export function AssetInventory({
           <TabsTrigger value="processos">Processos</TabsTrigger>
           <TabsTrigger value="servicos">Serviços</TabsTrigger>
           <TabsTrigger value="chamados">Chamados</TabsTrigger>
+          <TabsTrigger value="historico">Histórico</TabsTrigger>
         </TabsList>
         <TabsContent value="detalhe">
           {payload ? <DetailTab payload={payload} /> : <EmptyInventory />}
@@ -477,6 +485,13 @@ export function AssetInventory({
         </TabsContent>
         <TabsContent value="chamados">
           <AssetTickets clientId={clientId} />
+        </TabsContent>
+        <TabsContent value="historico">
+          <AssetBrowserHistory
+            hostname={hostname}
+            items={payload?.browserHistory ?? []}
+            hasInventory={Boolean(payload)}
+          />
         </TabsContent>
       </Tabs>
     </div>

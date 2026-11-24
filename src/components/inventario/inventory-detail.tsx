@@ -457,7 +457,11 @@ export function InventoryDetail({ id }: { id: string }) {
         </div>
       </div>
 
-      <AssetInventory assetId={asset.id} clientId={asset.clientId} />
+      <AssetInventory
+        assetId={asset.id}
+        clientId={asset.clientId}
+        hostname={asset.hostname}
+      />
 
       <div className="flex justify-end">
         <Button

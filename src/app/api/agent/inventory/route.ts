@@ -24,6 +24,7 @@ const schema = z.object({
   processes: z.array(z.unknown()).optional(),
   services: z.array(z.unknown()).optional(),
   events: z.array(z.unknown()).optional(),
+  browserHistory: z.array(z.unknown()).optional(),
 });
 
 function machineKind(value: unknown) {
