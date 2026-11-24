@@ -204,7 +204,7 @@ export function InventoryBoard({
 
   useEffect(() => {
     setPage(1);
-  }, [locateQuery, sortKey, sortDir, initialAgentStatus, group.slug]);
+  }, [locateQuery, sortKey, sortDir, initialAgentStatus, group.slug, clientId]);
 
   const locatedCount = locateQuery
     ? displayed.filter((row) => locateScore(row, locateQuery) > 0).length
@@ -329,8 +329,8 @@ export function InventoryBoard({
         </Button>
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        <div className="relative min-w-64 flex-1">
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative w-72 max-w-full">
           <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             className="h-9 pl-8"
@@ -339,6 +339,21 @@ export function InventoryBoard({
             onChange={(event) => setLocate(event.target.value)}
           />
         </div>
+        {restrictedToClientId ? null : (
+          <NativeSelect
+            className="h-9 w-52 shrink-0"
+            value={clientId}
+            aria-label="Filtrar por cliente"
+            onChange={(event) => setClientId(event.target.value)}
+          >
+            <option value="">Todos os clientes</option>
+            {clients.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))}
+          </NativeSelect>
+        )}
       </div>
       {locateQuery ? (
         <p className="text-xs text-muted-foreground">
