@@ -254,8 +254,8 @@ export function VaultBoard() {
         </Button>
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        <div className="relative min-w-64 flex-1">
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative w-72 max-w-full">
           <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             className="h-9 pl-8"
@@ -265,19 +265,20 @@ export function VaultBoard() {
           />
         </div>
         <NativeSelect
-          className="h-9 min-w-52"
+          className="h-9 w-52 shrink-0"
           value={clientId}
+          aria-label="Filtrar por cliente"
           onChange={(event) => setClientId(event.target.value)}
         >
           <option value="">Todos os clientes</option>
           {clients.map((item) => (
             <option key={item.id} value={item.id}>
-              {clientOptionLabel(item)}
+              {item.name}
             </option>
           ))}
         </NativeSelect>
         <NativeSelect
-          className="h-9 w-44"
+          className="h-9 w-44 shrink-0"
           value={kind}
           onChange={(event) => setKind(event.target.value)}
         >
