@@ -8,6 +8,7 @@ import {
   isAssetKind,
   isAgentStatus,
   monitorsInZabbix,
+  inventoryListFields,
 } from "@/config/inventario";
 import { db } from "@/db";
 import { asset, assetInventory, client } from "@/db/schema";
@@ -128,10 +129,14 @@ export const listAssets = inventarioAction
 
     return rows.map((row) => {
       const { inventoryPayload, ...assetRow } = row;
+      const extra = inventoryListFields(inventoryPayload);
       return {
         ...assetRow,
         ip: lanIpFromInventory(inventoryPayload, row.ip),
         agentStatus: resolveAgentStatus(row.agentStatus, row.lastSeenAt),
+        os: extra.reportedOs || row.os,
+        loggedUser: extra.loggedUser,
+        antivirus: extra.antivirus,
       };
     });
   });

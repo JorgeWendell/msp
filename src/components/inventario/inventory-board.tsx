@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { deleteAsset, listAssets, listInventoryClients, saveAsset } from "@/actions/inventario";
+import { MachinesPanelTable } from "@/components/inventario/machines-panel-table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -34,6 +35,7 @@ import {
   composePrinterNotes,
   getInventoryGroup,
   networkHostnames,
+  SHOW_MACHINES_PANEL_LIST,
 } from "@/config/inventario";
 type AssetRow = {
   id: string;
@@ -49,6 +51,8 @@ type AssetRow = {
   lastSeenAt: Date | string | null;
   meshNodeId?: string | null;
   clientName: string;
+  loggedUser?: string | null;
+  antivirus?: string | null;
 };
 
 type ClientOption = { id: string; name: string; active: boolean; code?: string | null };
@@ -78,6 +82,8 @@ function locateScore(row: AssetRow, query: string) {
     row.location,
     row.os,
     row.clientName,
+    row.loggedUser,
+    row.antivirus,
   ];
   let best = 0;
   for (const field of fields) {
@@ -143,6 +149,8 @@ export function InventoryBoard({
   const group = getInventoryGroup(grupo);
   const isPrinters = group.slug === "impressoras";
   const isNetwork = group.slug === "rede";
+  const showMachinesPanel =
+    SHOW_MACHINES_PANEL_LIST && !isPrinters && !isNetwork;
   const groupKinds = assetKinds.filter((item) =>
     (group.kinds as readonly string[]).includes(item.value)
   );
@@ -341,6 +349,25 @@ export function InventoryBoard({
         </p>
       ) : null}
 
+      {showMachinesPanel ? (
+        <MachinesPanelTable
+          rows={paged}
+          loading={loading}
+          empty={
+            rows.length === 0
+              ? group.empty
+              : "Nenhum registro encontrado neste grupo."
+          }
+          located={(id) => {
+            const row = paged.find((item) => item.id === id);
+            return row ? locateScore(row, locateQuery) > 0 : false;
+          }}
+          deletingId={deletingId}
+          onOpen={(row) => router.push(`/inventario/${row.id}`)}
+          onConnect={(row) => handleConnect(row)}
+          onDelete={(row) => void handleDelete(row)}
+        />
+      ) : (
       <div className="overflow-x-auto rounded-xl border">
         <table className="w-full min-w-[880px] text-sm">
           <thead className="bg-muted/50 text-left text-xs text-muted-foreground">
@@ -491,6 +518,7 @@ export function InventoryBoard({
           </tbody>
         </table>
       </div>
+      )}
       {!loading && displayed.length > 0 ? (
         <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
           <p>

@@ -1,13 +1,15 @@
 "use client";
 
-import { Loader2, Pencil, Plus } from "lucide-react";
+import { Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import {
+  deleteUsuario,
   listUsuarios,
   saveModuleAccess,
   saveUsuario,
+  updateUsuario,
   updateUsuarioRole,
 } from "@/actions/cadastros";
 import { Badge } from "@/components/ui/badge";
@@ -61,6 +63,7 @@ function grouped(modules: Grant[]) {
 export function UsuariosCadastro() {
   const [rows, setRows] = useState<UserRow[]>([]);
   const [canManage, setCanManage] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -75,6 +78,8 @@ export function UsuariosCadastro() {
   const [editModules, setEditModules] = useState<Grant[]>([]);
   const [editRole, setEditRole] = useState<UserRow["role"]>("member");
   const [editClientId, setEditClientId] = useState("");
+  const [editName, setEditName] = useState("");
+  const [editPassword, setEditPassword] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -85,6 +90,7 @@ export function UsuariosCadastro() {
       return;
     }
     setCanManage(result.data?.canManage ?? false);
+    setCurrentUserId(result.data?.currentUserId ?? null);
     setRows((result.data?.users as UserRow[]) ?? []);
     setClients((result.data?.clients as ClientOption[]) ?? []);
   }, []);
@@ -125,10 +131,20 @@ export function UsuariosCadastro() {
     await load();
   }
 
-  async function handleSaveModules(event: React.FormEvent) {
+  async function handleSaveUser(event: React.FormEvent) {
     event.preventDefault();
     if (!editing) return;
     setSaving(true);
+    const profileResult = await updateUsuario({
+      memberId: editing.memberId,
+      name: editName,
+      password: editPassword || undefined,
+    });
+    if (profileResult.serverError) {
+      setSaving(false);
+      toast.error(profileResult.serverError);
+      return;
+    }
     if (editRole !== editing.role) {
       const roleResult = await updateUsuarioRole({
         memberId: editing.memberId,
@@ -156,8 +172,31 @@ export function UsuariosCadastro() {
       }
     }
     setSaving(false);
-    toast.success("Permissões salvas.");
+    toast.success("Usuário atualizado.");
     setEditing(null);
+    setEditPassword("");
+    await load();
+  }
+
+  async function handleDelete() {
+    if (!editing) return;
+    if (
+      !confirm(
+        `Excluir o acesso de ${editing.name}? Essa pessoa deixa de entrar nesta empresa.`
+      )
+    ) {
+      return;
+    }
+    setSaving(true);
+    const result = await deleteUsuario({ memberId: editing.memberId });
+    setSaving(false);
+    if (result.serverError) {
+      toast.error(result.serverError);
+      return;
+    }
+    toast.success("Usuário excluído.");
+    setEditing(null);
+    setEditPassword("");
     await load();
   }
 
@@ -202,7 +241,7 @@ export function UsuariosCadastro() {
                   ) : row.restrictedClientName ? (
                     <Badge variant="outline">{row.restrictedClientName}</Badge>
                   ) : null}
-                  {canManage && row.role !== "owner" ? (
+                  {canManage ? (
                     <Button
                       variant="outline"
                       className="h-8 px-2"
@@ -211,10 +250,12 @@ export function UsuariosCadastro() {
                         setEditModules(row.modules);
                         setEditRole(row.role);
                         setEditClientId(row.restrictedClientId ?? "");
+                        setEditName(row.name);
+                        setEditPassword("");
                       }}
                     >
                       <Pencil />
-                      Módulos
+                      Editar
                     </Button>
                   ) : null}
                 </div>
@@ -356,13 +397,39 @@ export function UsuariosCadastro() {
       >
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Módulos — {editing?.name}</DialogTitle>
+            <DialogTitle>Editar usuário</DialogTitle>
             <DialogDescription>
-              Administrador, gestor, usuário ou negado em cada área. Só
-              inventário exige um cliente.
+              Altere nome, senha e o acesso aos módulos. A senha só muda se
+              você preencher o campo.
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleSaveModules} className="grid gap-4">
+          <form onSubmit={handleSaveUser} className="grid gap-4">
+            <Field>
+              <FieldLabel htmlFor="edit-user-name">Nome</FieldLabel>
+              <Input
+                id="edit-user-name"
+                className="h-9"
+                value={editName}
+                onChange={(event) => setEditName(event.target.value)}
+                required
+              />
+            </Field>
+            <Field>
+              <FieldLabel>E-mail</FieldLabel>
+              <Input className="h-9" value={editing?.email ?? ""} disabled />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="edit-user-password">Nova senha</FieldLabel>
+              <PasswordInput
+                id="edit-user-password"
+                minLength={8}
+                value={editPassword}
+                onChange={(event) => setEditPassword(event.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Deixe em branco para manter a senha atual.
+              </p>
+            </Field>
             <Field>
               <FieldLabel>Papel na empresa</FieldLabel>
               <NativeSelect
@@ -402,54 +469,81 @@ export function UsuariosCadastro() {
                 </NativeSelect>
               </Field>
             ) : null}
-            <Button
-              type="button"
-              variant="outline"
-              className="h-8 justify-self-start px-3 text-xs"
-              onClick={() =>
-                setEditModules((current) =>
-                  current.map((row) => ({
-                    ...row,
-                    profile: profilesForPreset("inventario")[row.slug] ?? "negado",
-                  }))
-                )
-              }
-            >
-              Aplicar só inventário
-            </Button>
-            <div className="grid max-h-[50vh] gap-2 overflow-y-auto pr-1">
-              {editModules.map((item) => (
-                <div
-                  key={item.slug}
-                  className="grid grid-cols-[1fr_10rem] items-center gap-2"
+            {editRole === "owner" ? (
+              <p className="text-sm text-muted-foreground">
+                O administrador da empresa tem acesso total a todos os módulos.
+              </p>
+            ) : (
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-8 justify-self-start px-3 text-xs"
+                  onClick={() =>
+                    setEditModules((current) =>
+                      current.map((row) => ({
+                        ...row,
+                        profile:
+                          profilesForPreset("inventario")[row.slug] ?? "negado",
+                      }))
+                    )
+                  }
                 >
-                  <p className="text-sm">{item.title}</p>
-                  <NativeSelect
-                    className="h-8"
-                    value={item.profile}
-                    onChange={(event) =>
-                      setEditModules((current) =>
-                        current.map((row) =>
-                          row.slug === item.slug
-                            ? {
-                                ...row,
-                                profile: event.target.value as ModuleProfile,
-                              }
-                            : row
-                        )
-                      )
-                    }
-                  >
-                    {moduleProfiles.map((profile) => (
-                      <option key={profile.value} value={profile.value}>
-                        {profile.label}
-                      </option>
-                    ))}
-                  </NativeSelect>
+                  Aplicar só inventário
+                </Button>
+                <div className="grid max-h-[50vh] gap-2 overflow-y-auto pr-1">
+                  {editModules.map((item) => (
+                    <div
+                      key={item.slug}
+                      className="grid grid-cols-[1fr_10rem] items-center gap-2"
+                    >
+                      <p className="text-sm">{item.title}</p>
+                      <NativeSelect
+                        className="h-8"
+                        value={item.profile}
+                        onChange={(event) =>
+                          setEditModules((current) =>
+                            current.map((row) =>
+                              row.slug === item.slug
+                                ? {
+                                    ...row,
+                                    profile: event.target
+                                      .value as ModuleProfile,
+                                  }
+                                : row
+                            )
+                          )
+                        }
+                      >
+                        {moduleProfiles.map((profile) => (
+                          <option key={profile.value} value={profile.value}>
+                            {profile.label}
+                          </option>
+                        ))}
+                      </NativeSelect>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-            <DialogFooter>
+              </>
+            )}
+            <DialogFooter className="gap-2 sm:justify-between">
+              {editing &&
+              editing.userId !== currentUserId &&
+              (editing.role !== "owner" ||
+                rows.filter((row) => row.role === "owner").length > 1) ? (
+                <Button
+                  type="button"
+                  variant="destructive"
+                  className="h-9 px-3"
+                  disabled={saving}
+                  onClick={() => void handleDelete()}
+                >
+                  <Trash2 />
+                  Excluir
+                </Button>
+              ) : (
+                <span />
+              )}
               <Button type="submit" disabled={saving} className="h-9 px-4">
                 {saving ? <Loader2 className="animate-spin" /> : null}
                 Salvar

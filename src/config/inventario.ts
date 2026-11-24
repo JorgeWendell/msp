@@ -97,6 +97,105 @@ export const inventoryGroups = [
 
 export type InventoryGroupSlug = (typeof inventoryGroups)[number]["slug"];
 
+/** Lista de Máquinas no estilo painel. false = tabela antiga. */
+export const SHOW_MACHINES_PANEL_LIST = true;
+
+const ignoredWindowsUsers = new Set([
+  "system",
+  "local service",
+  "network service",
+  "anonymous logon",
+  "defaultaccount",
+  "wdagutilityaccount",
+  "guest",
+  "convidado",
+  "administrador",
+  "administrator",
+  "defaultuser0",
+  "public",
+  "default",
+  "adelmsp",
+]);
+
+function rawText(value: unknown): string | null {
+  if (typeof value === "string" && value.trim()) return value.trim();
+  if (Array.isArray(value)) {
+    const parts = value
+      .map((item) =>
+        typeof item === "string"
+          ? item.trim()
+          : item && typeof item === "object" && "name" in item
+            ? String((item as { name?: unknown }).name ?? "").trim()
+            : ""
+      )
+      .filter(Boolean);
+    return parts.length ? parts.join(", ") : null;
+  }
+  return null;
+}
+
+export function displayWindowsUser(value: unknown) {
+  const raw = rawText(value);
+  if (!raw) return null;
+  const first = raw.split(",")[0]?.trim() ?? "";
+  const withoutDomain = first.includes("\\")
+    ? first.slice(first.lastIndexOf("\\") + 1)
+    : first.includes("@")
+      ? first.slice(0, first.indexOf("@"))
+      : first;
+  const name = withoutDomain.trim();
+  if (!name) return null;
+  const lower = name.toLowerCase();
+  if (ignoredWindowsUsers.has(lower)) return null;
+  if (lower.startsWith("dwm-") || lower.startsWith("umfd-")) return null;
+  if (name.endsWith("$")) return null;
+  return name;
+}
+
+function realUsersFromList(users: unknown) {
+  if (!Array.isArray(users)) return [];
+  const names = users
+    .map((item) => displayWindowsUser(item))
+    .filter((item): item is string => Boolean(item));
+  return [...new Set(names)];
+}
+
+export function inventoryListFields(payload: unknown) {
+  const root =
+    payload && typeof payload === "object"
+      ? (payload as Record<string, unknown>)
+      : null;
+  const system =
+    root?.system && typeof root.system === "object"
+      ? (root.system as Record<string, unknown>)
+      : null;
+  const hostname = (rawText(system?.hostname ?? system?.Hostname) ?? "").toLowerCase();
+  const notHost = (name: string | null) =>
+    name && name.toLowerCase() !== hostname ? name : null;
+  const logged = notHost(
+    displayWindowsUser(system?.loggedUser) ??
+      displayWindowsUser(system?.LoggedUser) ??
+      displayWindowsUser(system?.userName)
+  );
+  const fromUsers = realUsersFromList(root?.users).filter(
+    (name) => name.toLowerCase() !== hostname
+  );
+  const sessionRaw = Array.isArray(root?.users)
+    ? (root.users as unknown[]).find((item) => {
+        const raw = rawText(item);
+        return Boolean(raw?.includes("\\") && displayWindowsUser(raw));
+      })
+    : null;
+  return {
+    loggedUser:
+      logged ??
+      notHost(displayWindowsUser(sessionRaw)) ??
+      (fromUsers.length === 1 ? fromUsers[0] : fromUsers[0] ?? null),
+    antivirus: rawText(system?.antivirus ?? system?.Antivirus),
+    reportedOs: rawText(system?.os ?? system?.Os),
+  };
+}
+
 export function getInventoryGroup(slug: string | null | undefined) {
   return (
     inventoryGroups.find((item) => item.slug === slug) ?? inventoryGroups[0]

@@ -18,6 +18,7 @@ import {
   memberModule,
   operator,
   organization,
+  session,
   user,
 } from "@/db/schema";
 import { applyAccessPreset, canManageUsers, ensureMemberModules } from "@/lib/access";
@@ -357,6 +358,7 @@ export const listUsuarios = moduleAction("cadastros").action(async ({ ctx }) => 
 
   return {
     canManage: canManageUsers(ctx.access),
+    currentUserId: ctx.session.user.id,
     clients,
     users: rows.map((row) => {
       const mine = grants.filter((item) => item.memberId === row.memberId);
@@ -416,34 +418,72 @@ export const saveUsuario = moduleAction("cadastros")
       .limit(1);
 
     if (existing) {
-      throw new ActionError("Já existe um usuário com este e-mail.");
+      const [already] = await db
+        .select({ id: member.id })
+        .from(member)
+        .where(
+          and(
+            eq(member.organizationId, ctx.organizationId),
+            eq(member.userId, existing.id)
+          )
+        )
+        .limit(1);
+      if (already) {
+        throw new ActionError("Já existe um usuário com este e-mail.");
+      }
     }
 
     const context = await auth.$context;
     const hashed = await context.password.hash(parsedInput.password);
-    const userId = crypto.randomUUID();
+    const userId = existing?.id ?? crypto.randomUUID();
     const memberId = crypto.randomUUID();
     const now = new Date();
 
-    await db.insert(user).values({
-      id: userId,
-      name: parsedInput.name,
-      email: parsedInput.email,
-      emailVerified: true,
-      createdAt: now,
-      updatedAt: now,
-    });
+    if (!existing) {
+      await db.insert(user).values({
+        id: userId,
+        name: parsedInput.name,
+        email: parsedInput.email,
+        emailVerified: true,
+        createdAt: now,
+        updatedAt: now,
+      });
 
-    await db.insert(account).values({
-      id: crypto.randomUUID(),
-      issuer: "local:credential",
-      accountId: userId,
-      providerId: "credential",
-      userId,
-      password: hashed,
-      createdAt: now,
-      updatedAt: now,
-    });
+      await db.insert(account).values({
+        id: crypto.randomUUID(),
+        issuer: "local:credential",
+        accountId: userId,
+        providerId: "credential",
+        userId,
+        password: hashed,
+        createdAt: now,
+        updatedAt: now,
+      });
+    } else {
+      await db
+        .update(user)
+        .set({ name: parsedInput.name, updatedAt: now })
+        .where(eq(user.id, userId));
+      const updated = await db
+        .update(account)
+        .set({ password: hashed, updatedAt: now })
+        .where(
+          and(eq(account.userId, userId), eq(account.providerId, "credential"))
+        )
+        .returning({ id: account.id });
+      if (updated.length === 0) {
+        await db.insert(account).values({
+          id: crypto.randomUUID(),
+          issuer: "local:credential",
+          accountId: userId,
+          providerId: "credential",
+          userId,
+          password: hashed,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+    }
 
     await db.insert(member).values({
       id: memberId,
@@ -563,6 +603,152 @@ export const saveModuleAccess = moduleAction("cadastros")
       );
     } else {
       await setMemberClientScope(ctx.organizationId, target.id, null);
+    }
+
+    return { ok: true };
+  });
+
+async function ownedMember(organizationId: string, memberId: string) {
+  const [row] = await db
+    .select({
+      id: member.id,
+      userId: member.userId,
+      role: member.role,
+    })
+    .from(member)
+    .where(
+      and(eq(member.id, memberId), eq(member.organizationId, organizationId))
+    )
+    .limit(1);
+  if (!row) throw new ActionError("Usuário não encontrado.");
+  return row;
+}
+
+export const updateUsuario = moduleAction("cadastros")
+  .inputSchema(
+    z.object({
+      memberId: z.string(),
+      name: z.string().trim().min(2),
+      password: z.string().optional(),
+    })
+  )
+  .action(async ({ parsedInput, ctx }) => {
+    if (!canManageUsers(ctx.access)) {
+      throw new ActionError(
+        "Somente administrador da empresa ou de Cadastros gerencia usuários."
+      );
+    }
+    if (parsedInput.password && parsedInput.password.length < 8) {
+      throw new ActionError("A senha precisa ter ao menos 8 caracteres.");
+    }
+
+    const target = await ownedMember(ctx.organizationId, parsedInput.memberId);
+    const now = new Date();
+
+    await db
+      .update(user)
+      .set({ name: parsedInput.name, updatedAt: now })
+      .where(eq(user.id, target.userId));
+
+    if (parsedInput.password) {
+      const context = await auth.$context;
+      const hashed = await context.password.hash(parsedInput.password);
+      const updated = await db
+        .update(account)
+        .set({ password: hashed, updatedAt: now })
+        .where(
+          and(
+            eq(account.userId, target.userId),
+            eq(account.providerId, "credential")
+          )
+        )
+        .returning({ id: account.id });
+      if (updated.length === 0) {
+        await db.insert(account).values({
+          id: crypto.randomUUID(),
+          issuer: "local:credential",
+          accountId: target.userId,
+          providerId: "credential",
+          userId: target.userId,
+          password: hashed,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+      await db
+        .delete(session)
+        .where(
+          and(
+            eq(session.userId, target.userId),
+            eq(session.activeOrganizationId, ctx.organizationId)
+          )
+        );
+    }
+
+    return { ok: true };
+  });
+
+export const deleteUsuario = moduleAction("cadastros")
+  .inputSchema(z.object({ memberId: z.string() }))
+  .action(async ({ parsedInput, ctx }) => {
+    if (!canManageUsers(ctx.access)) {
+      throw new ActionError(
+        "Somente administrador da empresa ou de Cadastros gerencia usuários."
+      );
+    }
+
+    const target = await ownedMember(ctx.organizationId, parsedInput.memberId);
+    if (target.userId === ctx.session.user.id) {
+      throw new ActionError("Você não pode excluir o próprio acesso.");
+    }
+
+    if (target.role === "owner") {
+      const owners = await db
+        .select({ id: member.id })
+        .from(member)
+        .where(
+          and(
+            eq(member.organizationId, ctx.organizationId),
+            eq(member.role, "owner")
+          )
+        );
+      if (owners.length <= 1) {
+        throw new ActionError(
+          "Não é possível excluir o único administrador da empresa."
+        );
+      }
+    }
+
+    await db
+      .delete(session)
+      .where(
+        and(
+          eq(session.userId, target.userId),
+          eq(session.activeOrganizationId, ctx.organizationId)
+        )
+      );
+
+    await db
+      .delete(member)
+      .where(
+        and(
+          eq(member.id, target.id),
+          eq(member.organizationId, ctx.organizationId)
+        )
+      );
+
+    const remaining = await db
+      .select({ id: member.id })
+      .from(member)
+      .where(eq(member.userId, target.userId))
+      .limit(1);
+
+    if (remaining.length === 0) {
+      try {
+        await db.delete(user).where(eq(user.id, target.userId));
+      } catch {
+        // Tickets ou artigos podem manter o cadastro global; o acesso à empresa já saiu.
+      }
     }
 
     return { ok: true };
