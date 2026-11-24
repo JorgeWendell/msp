@@ -289,11 +289,11 @@ export function InventoryBoard({
     await load();
   }
 
-  function handleConnect(row: AssetRow) {
+  function handleConnect(row: { id: string }) {
     window.open(`/inventario/${row.id}/remoto`, "_blank", "noopener,noreferrer");
   }
 
-  async function handleDelete(row: AssetRow) {
+  async function handleDelete(row: { id: string; hostname: string }) {
     if (!confirm(`Excluir a máquina ${row.hostname}?`)) return;
     setDeletingId(row.id);
     const result = await deleteAsset({ id: row.id });
