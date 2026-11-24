@@ -55,24 +55,51 @@ export function monitorsInZabbix(kind: string) {
   return kind === "servidor" || kind === "rede";
 }
 
+export type InventoryOsMatch = "any" | "windows-server" | "not-windows-server";
+
+export function isWindowsServerOs(os: string | null | undefined) {
+  return /windows\s*server/i.test(os ?? "");
+}
+
+export function matchesInventoryOs(os: string | null | undefined, match: InventoryOsMatch) {
+  if (match === "windows-server") return isWindowsServerOs(os);
+  if (match === "not-windows-server") return !isWindowsServerOs(os);
+  return true;
+}
+
 export const inventoryGroups = [
   {
     slug: "maquinas",
     label: "Máquinas",
     kinds: ["desktop", "notebook", "servidor", "outro"] as const,
+    osMatch: "not-windows-server" as const,
     defaultKind: "desktop",
     title: "Máquinas",
     description:
-      "Desktops, notebooks, servidores e demais equipamentos de informática.",
+      "Desktops, notebooks e demais equipamentos de informática, sem Windows Server.",
     empty: "Nenhuma máquina ainda.",
     createTitle: "Nova máquina",
     createHint: "O cadastro já gera o token para o agente reportar status depois.",
     createLabel: "Máquina cadastrada. O token do agente já está pronto.",
   },
   {
+    slug: "servidores",
+    label: "Servidores",
+    kinds: ["desktop", "notebook", "servidor", "outro"] as const,
+    osMatch: "windows-server" as const,
+    defaultKind: "servidor",
+    title: "Servidores",
+    description: "Equipamentos com Microsoft Windows Server.",
+    empty: "Nenhum servidor Windows ainda.",
+    createTitle: "Novo servidor",
+    createHint: "Use o sistema operacional Windows Server para aparecer neste grupo.",
+    createLabel: "Servidor cadastrado. O token do agente já está pronto.",
+  },
+  {
     slug: "impressoras",
     label: "Impressoras",
     kinds: ["impressora"] as const,
+    osMatch: "any" as const,
     defaultKind: "impressora",
     title: "Impressoras",
     description: "Impressoras cadastradas por cliente.",
@@ -85,6 +112,7 @@ export const inventoryGroups = [
     slug: "rede",
     label: "Firewall & Routers",
     kinds: ["rede"] as const,
+    osMatch: "any" as const,
     defaultKind: "rede",
     title: "Firewall & Routers",
     description: "Firewalls, roteadores e demais ativos de rede.",
@@ -212,6 +240,13 @@ export function inventoryGroupForKind(kind: string) {
       (item.kinds as readonly string[]).includes(kind)
     ) ?? inventoryGroups[0]
   );
+}
+
+export function inventoryGroupForAsset(kind: string, os?: string | null) {
+  if (kind === "impressora" || kind === "rede") {
+    return inventoryGroupForKind(kind);
+  }
+  return getInventoryGroup(isWindowsServerOs(os) ? "servidores" : "maquinas");
 }
 
 const TONER_NOTE_PREFIX = "Toner/Tinta:";

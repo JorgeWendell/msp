@@ -7,8 +7,10 @@ import {
   createAgentToken,
   isAssetKind,
   isAgentStatus,
+  matchesInventoryOs,
   monitorsInZabbix,
   inventoryListFields,
+  type InventoryOsMatch,
 } from "@/config/inventario";
 import { db } from "@/db";
 import { asset, assetInventory, client } from "@/db/schema";
@@ -80,6 +82,7 @@ export const listAssets = inventarioAction
       clientId: z.string().optional(),
       kind: z.string().optional(),
       kinds: z.array(z.string()).optional(),
+      osMatch: z.enum(["any", "windows-server", "not-windows-server"]).optional(),
       agentStatus: z.string().optional(),
     })
   )
@@ -127,18 +130,21 @@ export const listAssets = inventarioAction
       .where(and(...filters))
       .orderBy(desc(asset.createdAt));
 
-    return rows.map((row) => {
-      const { inventoryPayload, ...assetRow } = row;
-      const extra = inventoryListFields(inventoryPayload);
-      return {
-        ...assetRow,
-        ip: lanIpFromInventory(inventoryPayload, row.ip),
-        agentStatus: resolveAgentStatus(row.agentStatus, row.lastSeenAt),
-        os: extra.reportedOs || row.os,
-        loggedUser: extra.loggedUser,
-        antivirus: extra.antivirus,
-      };
-    });
+    const osMatch = (parsedInput.osMatch ?? "any") as InventoryOsMatch;
+    return rows
+      .map((row) => {
+        const { inventoryPayload, ...assetRow } = row;
+        const extra = inventoryListFields(inventoryPayload);
+        return {
+          ...assetRow,
+          ip: lanIpFromInventory(inventoryPayload, row.ip),
+          agentStatus: resolveAgentStatus(row.agentStatus, row.lastSeenAt),
+          os: extra.reportedOs || row.os,
+          loggedUser: extra.loggedUser,
+          antivirus: extra.antivirus,
+        };
+      })
+      .filter((row) => matchesInventoryOs(row.os, osMatch));
   });
 
 export const getAsset = inventarioAction
@@ -185,9 +191,11 @@ export const getAsset = inventarioAction
 
     if (!row) throw new ActionError("Máquina não encontrada.");
     const { inventoryPayload, ...assetRow } = row;
+    const extra = inventoryListFields(inventoryPayload);
     return {
       ...assetRow,
       ip: lanIpFromInventory(inventoryPayload, row.ip),
+      os: extra.reportedOs || row.os,
       agentStatus: resolveAgentStatus(row.agentStatus, row.lastSeenAt),
     };
   });

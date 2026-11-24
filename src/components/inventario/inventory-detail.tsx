@@ -25,7 +25,7 @@ import {
   assetLabel,
   composePrinterNotes,
   formatAssetDate,
-  inventoryGroupForKind,
+  inventoryGroupForAsset,
   inventoryGroupHref,
   networkHostnameOptions,
   parsePrinterNotes,
@@ -161,7 +161,7 @@ export function InventoryDetail({ id }: { id: string }) {
       return;
     }
     toast.success("Máquina excluída.");
-    router.push(inventoryGroupHref(inventoryGroupForKind(asset.kind).slug));
+    router.push(inventoryGroupHref(inventoryGroupForAsset(asset.kind, asset.os).slug));
   }
 
   if (loading || !asset) {
@@ -178,10 +178,10 @@ export function InventoryDetail({ id }: { id: string }) {
         <div>
           <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
             <Link
-              href={inventoryGroupHref(inventoryGroupForKind(asset.kind).slug)}
+              href={inventoryGroupHref(inventoryGroupForAsset(asset.kind, asset.os).slug)}
               className="hover:underline"
             >
-              {inventoryGroupForKind(asset.kind).label}
+              {inventoryGroupForAsset(asset.kind, asset.os).label}
             </Link>{" "}
             · {asset.clientName}
           </p>

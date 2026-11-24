@@ -215,6 +215,7 @@ export function InventoryBoard({
     const result = await listAssets({
       clientId: clientId || undefined,
       kinds: [...group.kinds],
+      osMatch: group.osMatch,
     });
     setLoading(false);
     if (result.serverError) {
@@ -700,7 +701,9 @@ export function InventoryBoard({
                       ? "LaserJet Pro M404dn..."
                       : isNetwork
                         ? "2.7.2, 7.16..."
-                        : "Windows 11, Ubuntu 24.04..."
+                        : group.slug === "servidores"
+                          ? "Microsoft Windows Server 2022..."
+                          : "Windows 11, Ubuntu 24.04..."
                   }
                   value={form.os}
                   onChange={(event) =>
