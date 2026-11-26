@@ -4,6 +4,7 @@ export const assetKinds = [
   { value: "servidor", label: "Servidor" },
   { value: "impressora", label: "Impressora" },
   { value: "rede", label: "Rede" },
+  { value: "camera", label: "Câmera" },
   { value: "outro", label: "Outro" },
 ] as const;
 
@@ -120,6 +121,19 @@ export const inventoryGroups = [
     createTitle: "Novo ativo de rede",
     createHint: "Use o tipo Rede. Os registros atuais de rede continuam aqui.",
     createLabel: "Ativo de rede cadastrado.",
+  },
+  {
+    slug: "cameras",
+    label: "Câmeras",
+    kinds: ["camera"] as const,
+    osMatch: "any" as const,
+    defaultKind: "camera",
+    title: "Câmeras",
+    description: "Câmeras, DVRs e demais equipamentos de CFTV.",
+    empty: "Nenhuma câmera ou DVR ainda.",
+    createTitle: "Nova câmera",
+    createHint: "Cadastre DVRs e câmeras do cliente.",
+    createLabel: "Equipamento de câmera cadastrado.",
   },
 ] as const;
 
@@ -243,7 +257,7 @@ export function inventoryGroupForKind(kind: string) {
 }
 
 export function inventoryGroupForAsset(kind: string, os?: string | null) {
-  if (kind === "impressora" || kind === "rede") {
+  if (kind === "impressora" || kind === "rede" || kind === "camera") {
     return inventoryGroupForKind(kind);
   }
   return getInventoryGroup(isWindowsServerOs(os) ? "servidores" : "maquinas");
@@ -272,6 +286,74 @@ export function composePrinterNotes(toner: string, notes: string) {
   const body = notes.trim();
   if (!code) return body;
   return body ? `${TONER_NOTE_PREFIX} ${code}\n${body}` : `${TONER_NOTE_PREFIX} ${code}`;
+}
+
+export const cameraDeviceTypes = [
+  { value: "DVR", label: "DVR" },
+  { value: "CAMERAS", label: "CAMERAS" },
+] as const;
+
+export const cameraGroups = [
+  { value: "Grupo Padrão", label: "Grupo Padrão" },
+] as const;
+
+export type CameraDeviceType = (typeof cameraDeviceTypes)[number]["value"];
+
+export type CameraDetails = {
+  deviceType: string;
+  cloudId: string;
+  servicePort: string;
+  webPort: string;
+  username: string;
+  password: string;
+  group: string;
+};
+
+const CAMERA_NOTE_PREFIX = "camera-v1:";
+
+export function emptyCameraDetails(): CameraDetails {
+  return {
+    deviceType: "DVR",
+    cloudId: "",
+    servicePort: "",
+    webPort: "",
+    username: "",
+    password: "",
+    group: "Grupo Padrão",
+  };
+}
+
+export function isCameraDeviceType(value: string): value is CameraDeviceType {
+  return cameraDeviceTypes.some((item) => item.value === value);
+}
+
+export function isCameraGroup(value: string) {
+  return cameraGroups.some((item) => item.value === value);
+}
+
+export function parseCameraNotes(notes: string | null | undefined): CameraDetails {
+  const text = notes ?? "";
+  if (!text.startsWith(CAMERA_NOTE_PREFIX)) return emptyCameraDetails();
+  try {
+    const raw = JSON.parse(text.slice(CAMERA_NOTE_PREFIX.length)) as Partial<CameraDetails>;
+    const deviceType = raw.deviceType === "CAMERAS" ? "CAMERAS" : "DVR";
+    const group = isCameraGroup(raw.group ?? "") ? raw.group! : "Grupo Padrão";
+    return {
+      deviceType,
+      cloudId: raw.cloudId ?? "",
+      servicePort: raw.servicePort ?? "",
+      webPort: raw.webPort ?? "",
+      username: raw.username ?? "",
+      password: raw.password ?? "",
+      group,
+    };
+  } catch {
+    return emptyCameraDetails();
+  }
+}
+
+export function composeCameraNotes(details: CameraDetails) {
+  return `${CAMERA_NOTE_PREFIX}${JSON.stringify(details)}`;
 }
 
 export const networkHostnames = [

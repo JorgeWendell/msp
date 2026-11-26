@@ -18,17 +18,21 @@ import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
+import { PasswordInput } from "@/components/ui/password-input";
 import {
   agentStatusBadgeClass,
   agentStatuses,
   assetKinds,
   assetLabel,
+  cameraDeviceTypes,
+  cameraGroups,
   composePrinterNotes,
   formatAssetDate,
   inventoryGroupForAsset,
   inventoryGroupHref,
   networkHostnameOptions,
   parsePrinterNotes,
+  type CameraDetails,
 } from "@/config/inventario";
 import { AssetInventory } from "@/components/inventario/asset-inventory";
 
@@ -42,6 +46,7 @@ type Detail = {
   mac: string | null;
   location: string | null;
   notes: string | null;
+  camera: CameraDetails | null;
   active: boolean;
   clientId: string;
   clientName: string;
@@ -66,7 +71,6 @@ export function InventoryDetail({ id }: { id: string }) {
   const [rotating, setRotating] = useState(false);
 
   const load = useCallback(async () => {
-    setLoading(true);
     const result = await getAsset({ id });
     setLoading(false);
     if (result.serverError || !result.data) {
@@ -77,7 +81,11 @@ export function InventoryDetail({ id }: { id: string }) {
   }, [id]);
 
   useEffect(() => {
-    void load();
+    const kick = window.setTimeout(() => {
+      setLoading(true);
+      void load();
+    }, 0);
+    return () => window.clearTimeout(kick);
   }, [load]);
 
   useEffect(() => {
@@ -93,6 +101,7 @@ export function InventoryDetail({ id }: { id: string }) {
     if (!asset) return;
     const data = new FormData(event.currentTarget);
     const isPrinter = asset.kind === "impressora";
+    const isCamera = asset.kind === "camera";
     const notes = isPrinter
       ? composePrinterNotes(
           String(data.get("toner") || ""),
@@ -100,19 +109,36 @@ export function InventoryDetail({ id }: { id: string }) {
         )
       : String(data.get("notes") || "");
     setSaving(true);
-    const result = await saveAsset({
-      id: asset.id,
-      clientId: String(data.get("clientId") || ""),
-      hostname: String(data.get("hostname") || ""),
-      serial: String(data.get("serial") || "") || undefined,
-      kind: String(data.get("kind") || asset.kind),
-      os: String(data.get("os") || "") || undefined,
-      ip: String(data.get("ip") || "") || undefined,
-      mac: String(data.get("mac") || "") || undefined,
-      location: String(data.get("location") || "") || undefined,
-      notes: notes || undefined,
-      active: data.get("active") === "on",
-    });
+    const result = await saveAsset(
+      isCamera
+        ? {
+            id: asset.id,
+            clientId: String(data.get("clientId") || ""),
+            hostname: String(data.get("hostname") || ""),
+            kind: "camera",
+            deviceType: String(data.get("deviceType") || ""),
+            cloudId: String(data.get("cloudId") || "") || undefined,
+            servicePort: String(data.get("servicePort") || "") || undefined,
+            webPort: String(data.get("webPort") || "") || undefined,
+            username: String(data.get("username") || "") || undefined,
+            password: String(data.get("password") || "") || undefined,
+            cameraGroup: String(data.get("cameraGroup") || "") || undefined,
+            active: data.get("active") === "on",
+          }
+        : {
+            id: asset.id,
+            clientId: String(data.get("clientId") || ""),
+            hostname: String(data.get("hostname") || ""),
+            serial: String(data.get("serial") || "") || undefined,
+            kind: String(data.get("kind") || asset.kind),
+            os: String(data.get("os") || "") || undefined,
+            ip: String(data.get("ip") || "") || undefined,
+            mac: String(data.get("mac") || "") || undefined,
+            location: String(data.get("location") || "") || undefined,
+            notes: notes || undefined,
+            active: data.get("active") === "on",
+          }
+    );
     setSaving(false);
     if (result.serverError) {
       toast.error(result.serverError);
@@ -121,7 +147,7 @@ export function InventoryDetail({ id }: { id: string }) {
     if (result.data?.zabbixWarning) {
       toast.warning(result.data.zabbixWarning);
     } else {
-      toast.success("Máquina atualizada.");
+      toast.success(asset.kind === "camera" ? "Câmera atualizada." : "Máquina atualizada.");
     }
     await load();
   }
@@ -154,13 +180,18 @@ export function InventoryDetail({ id }: { id: string }) {
 
   async function handleDelete() {
     if (!asset) return;
-    if (!confirm(`Excluir a máquina ${asset.hostname}?`)) return;
+    if (
+      !confirm(
+        `Excluir ${asset.kind === "camera" ? "a câmera" : "a máquina"} ${asset.hostname}?`
+      )
+    )
+      return;
     const result = await deleteAsset({ id: asset.id });
     if (result.serverError) {
       toast.error(result.serverError);
       return;
     }
-    toast.success("Máquina excluída.");
+    toast.success(asset.kind === "camera" ? "Câmera excluída." : "Máquina excluída.");
     router.push(inventoryGroupHref(inventoryGroupForAsset(asset.kind, asset.os).slug));
   }
 
@@ -194,12 +225,14 @@ export function InventoryDetail({ id }: { id: string }) {
           <Badge variant={asset.active ? "secondary" : "outline"}>
             {asset.active ? "Ativa" : "Inativa"}
           </Badge>
-          <Badge
-            variant="outline"
-            className={agentStatusBadgeClass(asset.agentStatus)}
-          >
-            {assetLabel(agentStatuses, asset.agentStatus)}
-          </Badge>
+          {asset.kind === "camera" ? null : (
+            <Badge
+              variant="outline"
+              className={agentStatusBadgeClass(asset.agentStatus)}
+            >
+              {assetLabel(agentStatuses, asset.agentStatus)}
+            </Badge>
+          )}
           {asset.zabbixHostId ? (
             <Badge variant="secondary">Zabbix</Badge>
           ) : null}
@@ -221,6 +254,145 @@ export function InventoryDetail({ id }: { id: string }) {
           </Button>
         </div>
         <div className="grid gap-3 p-4 sm:grid-cols-2">
+          {asset.kind === "camera" && asset.camera ? (
+            <>
+              <Field>
+                <FieldLabel htmlFor="asset-client">Cliente</FieldLabel>
+                {clientLocked ? (
+                  <input type="hidden" name="clientId" value={asset.clientId} />
+                ) : null}
+                <NativeSelect
+                  id="asset-client"
+                  name={clientLocked ? undefined : "clientId"}
+                  className="h-9"
+                  value={asset.clientId}
+                  disabled={clientLocked}
+                  required
+                  onChange={(event) =>
+                    setAsset((current) =>
+                      current
+                        ? {
+                            ...current,
+                            clientId: event.target.value,
+                            clientName:
+                              clients.find((item) => item.id === event.target.value)
+                                ?.name ?? current.clientName,
+                          }
+                        : current
+                    )
+                  }
+                >
+                  {asset.clientId &&
+                  !clients.some((item) => item.id === asset.clientId) ? (
+                    <option value={asset.clientId}>{asset.clientName}</option>
+                  ) : null}
+                  {clients
+                    .filter((item) => item.active || item.id === asset.clientId)
+                    .map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name}
+                      </option>
+                    ))}
+                </NativeSelect>
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="asset-hostname">Nome do dispositivo</FieldLabel>
+                <Input
+                  id="asset-hostname"
+                  name="hostname"
+                  className="h-9"
+                  required
+                  defaultValue={asset.hostname}
+                />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="asset-device-type">Tipo de dispositivo</FieldLabel>
+                <NativeSelect
+                  id="asset-device-type"
+                  name="deviceType"
+                  className="h-9"
+                  required
+                  defaultValue={asset.camera.deviceType}
+                >
+                  {cameraDeviceTypes.map((item) => (
+                    <option key={item.value} value={item.value}>
+                      {item.label}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="asset-cloud-id">ID (Cloud)</FieldLabel>
+                <Input
+                  id="asset-cloud-id"
+                  name="cloudId"
+                  className="h-9"
+                  defaultValue={asset.camera.cloudId}
+                />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="asset-service-port">Porta de serviço</FieldLabel>
+                <Input
+                  id="asset-service-port"
+                  name="servicePort"
+                  className="h-9"
+                  inputMode="numeric"
+                  defaultValue={asset.camera.servicePort}
+                />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="asset-web-port">Porta web</FieldLabel>
+                <Input
+                  id="asset-web-port"
+                  name="webPort"
+                  className="h-9"
+                  inputMode="numeric"
+                  defaultValue={asset.camera.webPort}
+                />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="asset-username">Usuário</FieldLabel>
+                <Input
+                  id="asset-username"
+                  name="username"
+                  className="h-9"
+                  autoComplete="off"
+                  defaultValue={asset.camera.username}
+                />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="asset-password">Senha</FieldLabel>
+                <PasswordInput
+                  id="asset-password"
+                  name="password"
+                  className="h-9"
+                  autoComplete="new-password"
+                  defaultValue={asset.camera.password}
+                />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="asset-camera-group">Grupo</FieldLabel>
+                <NativeSelect
+                  id="asset-camera-group"
+                  name="cameraGroup"
+                  className="h-9"
+                  required
+                  defaultValue={asset.camera.group}
+                >
+                  {cameraGroups.map((item) => (
+                    <option key={item.value} value={item.value}>
+                      {item.label}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </Field>
+              <label className="flex h-8 items-center gap-2 text-sm sm:col-span-2">
+                <input type="checkbox" name="active" defaultChecked={asset.active} />
+                Equipamento ativo no inventário
+              </label>
+            </>
+          ) : (
+          <>
           <Field>
             <FieldLabel htmlFor="asset-client">Cliente</FieldLabel>
             {clientLocked ? (
@@ -400,9 +572,12 @@ export function InventoryDetail({ id }: { id: string }) {
             />
             Máquina ativa no inventário
           </label>
+          </>
+          )}
         </div>
       </form>
 
+      {asset.kind === "camera" ? null : (
       <div className="overflow-hidden rounded-xl border">
         <div className="border-b bg-muted/50 px-4 py-2.5 text-xs font-medium tracking-wide text-muted-foreground uppercase">
           Agente
@@ -456,12 +631,15 @@ export function InventoryDetail({ id }: { id: string }) {
           </div>
         </div>
       </div>
+      )}
 
+      {asset.kind === "camera" ? null : (
       <AssetInventory
         assetId={asset.id}
         clientId={asset.clientId}
         hostname={asset.hostname}
       />
+      )}
 
       <div className="flex justify-end">
         <Button
@@ -470,7 +648,7 @@ export function InventoryDetail({ id }: { id: string }) {
           className="h-9 px-3 text-destructive"
           onClick={() => void handleDelete()}
         >
-          Excluir máquina
+          {asset.kind === "camera" ? "Excluir câmera" : "Excluir máquina"}
         </Button>
       </div>
     </div>

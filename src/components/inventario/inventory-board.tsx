@@ -27,11 +27,14 @@ import {
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
+import { PasswordInput } from "@/components/ui/password-input";
 import {
   agentStatusBadgeClass,
   agentStatuses,
   assetKinds,
   assetLabel,
+  cameraDeviceTypes,
+  cameraGroups,
   composePrinterNotes,
   getInventoryGroup,
   networkHostnames,
@@ -70,6 +73,13 @@ const emptyForm = {
   location: "",
   notes: "",
   toner: "",
+  deviceType: "DVR",
+  cloudId: "",
+  servicePort: "",
+  webPort: "",
+  username: "",
+  password: "",
+  cameraGroup: "Grupo Padrão",
 };
 
 function locateScore(row: AssetRow, query: string) {
@@ -149,8 +159,9 @@ export function InventoryBoard({
   const group = getInventoryGroup(grupo);
   const isPrinters = group.slug === "impressoras";
   const isNetwork = group.slug === "rede";
+  const isCameras = group.slug === "cameras";
   const showMachinesPanel =
-    SHOW_MACHINES_PANEL_LIST && !isPrinters && !isNetwork;
+    SHOW_MACHINES_PANEL_LIST && !isPrinters && !isNetwork && !isCameras;
   const groupKinds = assetKinds.filter((item) =>
     (group.kinds as readonly string[]).includes(item.value)
   );
@@ -203,7 +214,8 @@ export function InventoryBoard({
   );
 
   useEffect(() => {
-    setPage(1);
+    const kick = window.setTimeout(() => setPage(1), 0);
+    return () => window.clearTimeout(kick);
   }, [locateQuery, sortKey, sortDir, initialAgentStatus, group.slug, clientId]);
 
   const locatedCount = locateQuery
@@ -211,7 +223,6 @@ export function InventoryBoard({
     : 0;
 
   const load = useCallback(async () => {
-    setLoading(true);
     const result = await listAssets({
       clientId: clientId || undefined,
       kinds: [...group.kinds],
@@ -226,11 +237,18 @@ export function InventoryBoard({
   }, [clientId, group.slug]);
 
   useEffect(() => {
-    void load();
+    const kick = window.setTimeout(() => {
+      setLoading(true);
+      void load();
+    }, 0);
+    return () => window.clearTimeout(kick);
   }, [load]);
 
   useEffect(() => {
-    setForm((current) => ({ ...current, kind: group.defaultKind }));
+    const kick = window.setTimeout(() => {
+      setForm((current) => ({ ...current, kind: group.defaultKind }));
+    }, 0);
+    return () => window.clearTimeout(kick);
   }, [group.defaultKind]);
 
   useEffect(() => {
@@ -251,6 +269,8 @@ export function InventoryBoard({
       ...emptyForm,
       kind: group.defaultKind,
       hostname: isNetwork ? "Pfsense" : "",
+      deviceType: "DVR",
+      cameraGroup: "Grupo Padrão",
       clientId: restrictedToClientId || "",
     });
     setOpen(true);
@@ -259,19 +279,34 @@ export function InventoryBoard({
   async function handleCreate(event: React.FormEvent) {
     event.preventDefault();
     setSaving(true);
-    const result = await saveAsset({
-      clientId: form.clientId,
-      hostname: form.hostname,
-      serial: form.serial || undefined,
-      kind: form.kind,
-      os: form.os || undefined,
-      ip: form.ip || undefined,
-      mac: form.mac || undefined,
-      location: form.location || undefined,
-      notes: isPrinters
-        ? composePrinterNotes(form.toner, form.notes) || undefined
-        : form.notes || undefined,
-    });
+    const result = await saveAsset(
+      isCameras
+        ? {
+            clientId: form.clientId,
+            hostname: form.hostname,
+            kind: "camera",
+            deviceType: form.deviceType,
+            cloudId: form.cloudId || undefined,
+            servicePort: form.servicePort || undefined,
+            webPort: form.webPort || undefined,
+            username: form.username || undefined,
+            password: form.password || undefined,
+            cameraGroup: form.cameraGroup || undefined,
+          }
+        : {
+            clientId: form.clientId,
+            hostname: form.hostname,
+            serial: form.serial || undefined,
+            kind: form.kind,
+            os: form.os || undefined,
+            ip: form.ip || undefined,
+            mac: form.mac || undefined,
+            location: form.location || undefined,
+            notes: isPrinters
+              ? composePrinterNotes(form.toner, form.notes) || undefined
+              : form.notes || undefined,
+          }
+    );
     setSaving(false);
     if (result.serverError) {
       toast.error(result.serverError);
@@ -295,7 +330,7 @@ export function InventoryBoard({
   }
 
   async function handleDelete(row: { id: string; hostname: string }) {
-    if (!confirm(`Excluir a máquina ${row.hostname}?`)) return;
+    if (!confirm(`Excluir ${isCameras ? "a câmera" : "a máquina"} ${row.hostname}?`)) return;
     setDeletingId(row.id);
     const result = await deleteAsset({ id: row.id });
     setDeletingId(null);
@@ -303,7 +338,7 @@ export function InventoryBoard({
       toast.error(result.serverError);
       return;
     }
-    toast.success("Máquina excluída.");
+    toast.success(isCameras ? "Câmera excluída." : "Máquina excluída.");
     await load();
   }
 
@@ -335,7 +370,11 @@ export function InventoryBoard({
           <Input
             className="h-9 pl-8"
             value={locate}
-            placeholder="Localizar hostname, serial, IP ou MAC..."
+            placeholder={
+              isCameras
+                ? "Localizar nome, cliente ou ID..."
+                : "Localizar hostname, serial, IP ou MAC..."
+            }
             onChange={(event) => setLocate(event.target.value)}
           />
         </div>
@@ -389,7 +428,15 @@ export function InventoryBoard({
           <thead className="bg-muted/50 text-left text-xs text-muted-foreground">
             <tr>
               <SortHeader
-                label={isPrinters ? "Nome" : isNetwork ? "Equipamento" : "Hostname"}
+                label={
+                  isCameras
+                    ? "Nome"
+                    : isPrinters
+                      ? "Nome"
+                      : isNetwork
+                        ? "Equipamento"
+                        : "Hostname"
+                }
                 column="hostname"
                 sortKey={sortKey}
                 sortDir={sortDir}
@@ -404,45 +451,56 @@ export function InventoryBoard({
               />
               <SortHeader
                 label="Tipo"
-                column="kind"
+                column={isCameras ? "os" : "kind"}
                 sortKey={sortKey}
                 sortDir={sortDir}
                 onSort={handleSort}
               />
+              {isCameras ? (
+                <th className="px-3 py-2.5 font-medium">ID (Cloud)</th>
+              ) : (
+                <SortHeader
+                  label={isPrinters ? "Modelo" : isNetwork ? "Versão" : "SO"}
+                  column="os"
+                  sortKey={sortKey}
+                  sortDir={sortDir}
+                  onSort={handleSort}
+                />
+              )}
               <SortHeader
-                label={isPrinters ? "Modelo" : isNetwork ? "Versão" : "SO"}
-                column="os"
-                sortKey={sortKey}
-                sortDir={sortDir}
-                onSort={handleSort}
-              />
-              <SortHeader
-                label={isNetwork ? "IP LAN" : "IP"}
+                label={isCameras ? "Porta de serviço" : isNetwork ? "IP LAN" : "IP"}
                 column="ip"
                 sortKey={sortKey}
                 sortDir={sortDir}
                 onSort={handleSort}
               />
-              <SortHeader
-                label="Agente"
-                column="agentStatus"
-                sortKey={sortKey}
-                sortDir={sortDir}
-                onSort={handleSort}
-              />
+              {isCameras ? (
+                <>
+                  <th className="px-3 py-2.5 font-medium">Porta web</th>
+                  <th className="px-3 py-2.5 font-medium">Grupo</th>
+                </>
+              ) : (
+                <SortHeader
+                  label="Agente"
+                  column="agentStatus"
+                  sortKey={sortKey}
+                  sortDir={sortDir}
+                  onSort={handleSort}
+                />
+              )}
               <th className="px-3 py-2.5 font-medium">Ações</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
               <tr>
-                <td className="px-3 py-8 text-center text-muted-foreground" colSpan={7}>
+                <td className="px-3 py-8 text-center text-muted-foreground" colSpan={isCameras ? 8 : 7}>
                   Carregando...
                 </td>
               </tr>
             ) : displayed.length === 0 ? (
               <tr>
-                <td className="px-3 py-8 text-center text-muted-foreground" colSpan={7}>
+                <td className="px-3 py-8 text-center text-muted-foreground" colSpan={isCameras ? 8 : 7}>
                   {rows.length === 0
                     ? group.empty
                     : "Nenhum registro encontrado neste grupo."}
@@ -464,28 +522,45 @@ export function InventoryBoard({
                     <Link href={`/inventario/${row.id}`} className="font-medium hover:underline">
                       {row.hostname}
                     </Link>
-                    <p className="text-xs text-muted-foreground">
-                      {row.serial ||
-                        (isPrinters
-                          ? "Sem marca"
-                          : isNetwork
-                            ? "Sem acesso"
-                            : "Sem serial")}
-                      {!row.active ? " · Inativa" : ""}
-                    </p>
+                    {isCameras ? (
+                      !row.active ? (
+                        <p className="text-xs text-muted-foreground">Inativa</p>
+                      ) : null
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        {row.serial ||
+                          (isPrinters
+                            ? "Sem marca"
+                            : isNetwork
+                              ? "Sem acesso"
+                              : "Sem serial")}
+                        {!row.active ? " · Inativa" : ""}
+                      </p>
+                    )}
                   </td>
                   <td className="px-3 py-2.5">{row.clientName}</td>
-                  <td className="px-3 py-2.5">{assetLabel(assetKinds, row.kind)}</td>
-                  <td className="px-3 py-2.5">{row.os || "—"}</td>
-                  <td className="px-3 py-2.5">{row.ip || "—"}</td>
                   <td className="px-3 py-2.5">
-                    <Badge
-                      variant="outline"
-                      className={agentStatusBadgeClass(row.agentStatus)}
-                    >
-                      {assetLabel(agentStatuses, row.agentStatus)}
-                    </Badge>
+                    {isCameras ? row.os || "—" : assetLabel(assetKinds, row.kind)}
                   </td>
+                  <td className="px-3 py-2.5">
+                    {isCameras ? row.serial || "—" : row.os || "—"}
+                  </td>
+                  <td className="px-3 py-2.5">{row.ip || "—"}</td>
+                  {isCameras ? (
+                    <>
+                      <td className="px-3 py-2.5">{row.mac || "—"}</td>
+                      <td className="px-3 py-2.5">{row.location || "—"}</td>
+                    </>
+                  ) : (
+                    <td className="px-3 py-2.5">
+                      <Badge
+                        variant="outline"
+                        className={agentStatusBadgeClass(row.agentStatus)}
+                      >
+                        {assetLabel(agentStatuses, row.agentStatus)}
+                      </Badge>
+                    </td>
+                  )}
                   <td className="px-3 py-2.5">
                     <DropdownMenu>
                       <DropdownMenuTrigger
@@ -508,10 +583,12 @@ export function InventoryBoard({
                           <Pencil />
                           Editar
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => void handleConnect(row)}>
-                          <Monitor />
-                          Conectar
-                        </DropdownMenuItem>
+                        {isCameras ? null : (
+                          <DropdownMenuItem onClick={() => void handleConnect(row)}>
+                            <Monitor />
+                            Conectar
+                          </DropdownMenuItem>
+                        )}
                         <DropdownMenuItem
                           variant="destructive"
                           disabled={deletingId === row.id}
@@ -539,8 +616,12 @@ export function InventoryBoard({
         <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
           <p>
             {displayed.length === 1
-              ? "1 máquina"
-              : `${displayed.length} máquinas`}
+              ? isCameras
+                ? "1 câmera"
+                : "1 máquina"
+              : isCameras
+                ? `${displayed.length} câmeras`
+                : `${displayed.length} máquinas`}
             {pageCount > 1 ? ` · página ${currentPage} de ${pageCount}` : ""}
           </p>
           {pageCount > 1 ? (
@@ -619,6 +700,143 @@ export function InventoryBoard({
                     ))}
                 </NativeSelect>
               </Field>
+              {isCameras ? (
+                <>
+                  <Field>
+                    <FieldLabel htmlFor="asset-hostname">Nome do dispositivo</FieldLabel>
+                    <Input
+                      id="asset-hostname"
+                      className="h-9"
+                      required
+                      value={form.hostname}
+                      onChange={(event) =>
+                        setForm((current) => ({
+                          ...current,
+                          hostname: event.target.value,
+                        }))
+                      }
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="asset-device-type">Tipo de dispositivo</FieldLabel>
+                    <NativeSelect
+                      id="asset-device-type"
+                      className="h-9"
+                      required
+                      value={form.deviceType}
+                      onChange={(event) =>
+                        setForm((current) => ({
+                          ...current,
+                          deviceType: event.target.value,
+                        }))
+                      }
+                    >
+                      {cameraDeviceTypes.map((item) => (
+                        <option key={item.value} value={item.value}>
+                          {item.label}
+                        </option>
+                      ))}
+                    </NativeSelect>
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="asset-cloud-id">ID (Cloud)</FieldLabel>
+                    <Input
+                      id="asset-cloud-id"
+                      className="h-9"
+                      value={form.cloudId}
+                      onChange={(event) =>
+                        setForm((current) => ({
+                          ...current,
+                          cloudId: event.target.value,
+                        }))
+                      }
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="asset-service-port">Porta de serviço</FieldLabel>
+                    <Input
+                      id="asset-service-port"
+                      className="h-9"
+                      inputMode="numeric"
+                      value={form.servicePort}
+                      onChange={(event) =>
+                        setForm((current) => ({
+                          ...current,
+                          servicePort: event.target.value,
+                        }))
+                      }
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="asset-web-port">Porta web</FieldLabel>
+                    <Input
+                      id="asset-web-port"
+                      className="h-9"
+                      inputMode="numeric"
+                      value={form.webPort}
+                      onChange={(event) =>
+                        setForm((current) => ({
+                          ...current,
+                          webPort: event.target.value,
+                        }))
+                      }
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="asset-username">Usuário</FieldLabel>
+                    <Input
+                      id="asset-username"
+                      className="h-9"
+                      autoComplete="off"
+                      value={form.username}
+                      onChange={(event) =>
+                        setForm((current) => ({
+                          ...current,
+                          username: event.target.value,
+                        }))
+                      }
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="asset-password">Senha</FieldLabel>
+                    <PasswordInput
+                      id="asset-password"
+                      className="h-9"
+                      autoComplete="new-password"
+                      value={form.password}
+                      onChange={(event) =>
+                        setForm((current) => ({
+                          ...current,
+                          password: event.target.value,
+                        }))
+                      }
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="asset-camera-group">Grupo</FieldLabel>
+                    <NativeSelect
+                      id="asset-camera-group"
+                      className="h-9"
+                      required
+                      value={form.cameraGroup}
+                      onChange={(event) =>
+                        setForm((current) => ({
+                          ...current,
+                          cameraGroup: event.target.value,
+                        }))
+                      }
+                    >
+                      {cameraGroups.map((item) => (
+                        <option key={item.value} value={item.value}>
+                          {item.label}
+                        </option>
+                      ))}
+                    </NativeSelect>
+                  </Field>
+                </>
+              ) : null}
+              {isCameras ? null : (
+              <>
               <Field>
                 <FieldLabel htmlFor="asset-kind">Tipo</FieldLabel>
                 <NativeSelect
@@ -799,6 +1017,8 @@ export function InventoryBoard({
                   }
                 />
               </Field>
+              </>
+              )}
             </FieldGroup>
             <DialogFooter>
               <Button type="submit" disabled={saving} className="h-9 px-4">

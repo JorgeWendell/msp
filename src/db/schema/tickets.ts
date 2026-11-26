@@ -8,6 +8,7 @@ import {
 
 import { organization, user } from "./auth";
 import { client, clientContact, operator } from "./cadastros";
+import { asset } from "./inventario";
 
 const timestamps = {
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -32,6 +33,9 @@ export const ticket = pgTable(
     contactId: text("contact_id").references(() => clientContact.id, {
       onDelete: "set null",
     }),
+    assetId: text("asset_id").references(() => asset.id, {
+      onDelete: "set null",
+    }),
     operatorId: text("operator_id").references(() => operator.id, {
       onDelete: "set null",
     }),
@@ -51,6 +55,7 @@ export const ticket = pgTable(
     uniqueIndex("ticket_org_number_uidx").on(table.organizationId, table.number),
     index("ticket_organizationId_idx").on(table.organizationId),
     index("ticket_clientId_idx").on(table.clientId),
+    index("ticket_assetId_idx").on(table.assetId),
     index("ticket_status_idx").on(table.status),
   ]
 );

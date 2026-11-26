@@ -4,11 +4,15 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 
 import {
+  composeCameraNotes,
   createAgentToken,
   isAssetKind,
   isAgentStatus,
+  isCameraDeviceType,
+  isCameraGroup,
   matchesInventoryOs,
   monitorsInZabbix,
+  parseCameraNotes,
   inventoryListFields,
   type InventoryOsMatch,
 } from "@/config/inventario";
@@ -22,7 +26,7 @@ import {
 } from "@/lib/agent-presence";
 import { lanIpFromInventory } from "@/lib/lan-ip";
 import { ActionError, moduleAction } from "@/lib/safe-action";
-import { decryptSecret } from "@/lib/vault-crypto";
+import { decryptSecret, encryptSecret } from "@/lib/vault-crypto";
 
 const inventarioAction = moduleAction("inventario");
 
@@ -135,11 +139,12 @@ export const listAssets = inventarioAction
       .map((row) => {
         const { inventoryPayload, ...assetRow } = row;
         const extra = inventoryListFields(inventoryPayload);
+        const camera = row.kind === "camera";
         return {
           ...assetRow,
-          ip: lanIpFromInventory(inventoryPayload, row.ip),
+          ip: camera ? row.ip : lanIpFromInventory(inventoryPayload, row.ip),
           agentStatus: resolveAgentStatus(row.agentStatus, row.lastSeenAt),
-          os: extra.reportedOs || row.os,
+          os: camera ? row.os : extra.reportedOs || row.os,
           loggedUser: extra.loggedUser,
           antivirus: extra.antivirus,
         };
@@ -192,10 +197,20 @@ export const getAsset = inventarioAction
     if (!row) throw new ActionError("Máquina não encontrada.");
     const { inventoryPayload, ...assetRow } = row;
     const extra = inventoryListFields(inventoryPayload);
+    const camera = row.kind === "camera" ? parseCameraNotes(row.notes) : null;
+    if (camera?.password) {
+      try {
+        camera.password = decryptSecret(camera.password);
+      } catch {
+        camera.password = "";
+      }
+    }
     return {
       ...assetRow,
-      ip: lanIpFromInventory(inventoryPayload, row.ip),
-      os: extra.reportedOs || row.os,
+      notes: camera ? null : assetRow.notes,
+      camera,
+      ip: camera ? row.ip : lanIpFromInventory(inventoryPayload, row.ip),
+      os: camera ? row.os : extra.reportedOs || row.os,
       agentStatus: resolveAgentStatus(row.agentStatus, row.lastSeenAt),
     };
   });
@@ -203,7 +218,7 @@ export const getAsset = inventarioAction
 const saveSchema = z.object({
   id: z.string().optional(),
   clientId: z.string().min(1, "Selecione o cliente."),
-  hostname: z.string().trim().min(1, "Informe o hostname."),
+  hostname: z.string().trim().min(1, "Informe o nome."),
   serial: z.string().trim().optional(),
   kind: z.string(),
   os: z.string().trim().optional(),
@@ -212,6 +227,13 @@ const saveSchema = z.object({
   location: z.string().trim().optional(),
   notes: z.string().trim().optional(),
   active: z.boolean().optional(),
+  deviceType: z.string().optional(),
+  cloudId: z.string().trim().optional(),
+  servicePort: z.string().trim().optional(),
+  webPort: z.string().trim().optional(),
+  username: z.string().trim().optional(),
+  password: z.string().optional(),
+  cameraGroup: z.string().trim().optional(),
 });
 
 export const saveAsset = inventarioAction
@@ -220,22 +242,63 @@ export const saveAsset = inventarioAction
     if (!isAssetKind(parsedInput.kind)) {
       throw new ActionError("Tipo de máquina inválido.");
     }
+    if (parsedInput.kind === "camera") {
+      if (!parsedInput.deviceType || !isCameraDeviceType(parsedInput.deviceType)) {
+        throw new ActionError("Selecione o tipo de dispositivo.");
+      }
+      if (parsedInput.cameraGroup && !isCameraGroup(parsedInput.cameraGroup)) {
+        throw new ActionError("Grupo inválido.");
+      }
+      for (const [label, value] of [
+        ["Porta de serviço", parsedInput.servicePort],
+        ["Porta web", parsedInput.webPort],
+      ] as const) {
+        if (value && !/^\d+$/.test(value)) {
+          throw new ActionError(`${label} precisa ser numérica.`);
+        }
+      }
+    }
     const scope = inventoryScopeClientId(ctx.access);
     if (scope && parsedInput.clientId !== scope) {
       throw new ActionError("Você só pode cadastrar máquinas deste cliente.");
     }
     const clientId = scope ?? parsedInput.clientId;
 
+    const cameraGroup = parsedInput.cameraGroup || "Grupo Padrão";
     const payload = {
       clientId,
       hostname: parsedInput.hostname,
-      serial: parsedInput.serial || null,
+      serial:
+        parsedInput.kind === "camera"
+          ? parsedInput.cloudId || null
+          : parsedInput.serial || null,
       kind: parsedInput.kind,
-      os: parsedInput.os || null,
-      ip: parsedInput.ip || null,
-      mac: parsedInput.mac || null,
-      location: parsedInput.location || null,
-      notes: parsedInput.notes || null,
+      os:
+        parsedInput.kind === "camera"
+          ? parsedInput.deviceType || null
+          : parsedInput.os || null,
+      ip:
+        parsedInput.kind === "camera"
+          ? parsedInput.servicePort || null
+          : parsedInput.ip || null,
+      mac:
+        parsedInput.kind === "camera"
+          ? parsedInput.webPort || null
+          : parsedInput.mac || null,
+      location:
+        parsedInput.kind === "camera" ? cameraGroup : parsedInput.location || null,
+      notes:
+        parsedInput.kind === "camera"
+          ? composeCameraNotes({
+              deviceType: parsedInput.deviceType || "DVR",
+              cloudId: parsedInput.cloudId ?? "",
+              servicePort: parsedInput.servicePort ?? "",
+              webPort: parsedInput.webPort ?? "",
+              username: parsedInput.username ?? "",
+              password: parsedInput.password ? encryptSecret(parsedInput.password) : "",
+              group: cameraGroup,
+            })
+          : parsedInput.notes || null,
       active: parsedInput.active ?? true,
       updatedAt: new Date(),
     };

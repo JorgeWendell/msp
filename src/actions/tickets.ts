@@ -17,6 +17,7 @@ import {
 } from "@/config/tickets";
 import { db } from "@/db";
 import {
+  asset,
   client,
   clientContact,
   kbArticle,
@@ -77,7 +78,7 @@ async function ownedTicket(organizationId: string, id: string) {
 }
 
 export const listTicketOptions = ticketsAction.action(async ({ ctx }) => {
-  const [clients, contacts, operators] = await Promise.all([
+  const [clients, contacts, operators, assets] = await Promise.all([
     db
       .select({ id: client.id, name: client.name, active: client.active, code: client.code })
       .from(client)
@@ -102,9 +103,19 @@ export const listTicketOptions = ticketsAction.action(async ({ ctx }) => {
       .from(operator)
       .where(eq(operator.organizationId, ctx.organizationId))
       .orderBy(operator.name),
+    db
+      .select({
+        id: asset.id,
+        clientId: asset.clientId,
+        hostname: asset.hostname,
+        active: asset.active,
+      })
+      .from(asset)
+      .where(eq(asset.organizationId, ctx.organizationId))
+      .orderBy(asset.hostname),
   ]);
 
-  return { clients, contacts, operators };
+  return { clients, contacts, operators, assets };
 });
 
 export const listTickets = ticketsAction
@@ -147,10 +158,12 @@ export const listTickets = ticketsAction
         category: ticket.category,
         createdAt: ticket.createdAt,
         clientName: client.name,
+        hostname: asset.hostname,
         operatorName: operator.name,
       })
       .from(ticket)
       .innerJoin(client, eq(ticket.clientId, client.id))
+      .leftJoin(asset, eq(ticket.assetId, asset.id))
       .leftJoin(operator, eq(ticket.operatorId, operator.id))
       .where(and(...filters))
       .orderBy(desc(ticket.createdAt));
@@ -170,6 +183,7 @@ export const getTicket = ticketsAction
         category: ticket.category,
         clientId: ticket.clientId,
         contactId: ticket.contactId,
+        assetId: ticket.assetId,
         operatorId: ticket.operatorId,
         createdAt: ticket.createdAt,
         updatedAt: ticket.updatedAt,
@@ -177,12 +191,14 @@ export const getTicket = ticketsAction
         closedAt: ticket.closedAt,
         clientName: client.name,
         contactName: clientContact.name,
+        hostname: asset.hostname,
         operatorName: operator.name,
         createdByName: user.name,
       })
       .from(ticket)
       .innerJoin(client, eq(ticket.clientId, client.id))
       .leftJoin(clientContact, eq(ticket.contactId, clientContact.id))
+      .leftJoin(asset, eq(ticket.assetId, asset.id))
       .leftJoin(operator, eq(ticket.operatorId, operator.id))
       .innerJoin(user, eq(ticket.createdByUserId, user.id))
       .where(
@@ -238,6 +254,7 @@ export const createTicket = ticketsAction
     z.object({
       clientId: z.string().min(1, "Selecione o cliente."),
       contactId: z.string().optional(),
+      assetId: z.string().optional(),
       operatorId: z.string().optional(),
       title: z.string().trim().min(3, "Informe o título."),
       description: z.string().trim().optional(),
@@ -282,6 +299,24 @@ export const createTicket = ticketsAction
       contactName = ownedContact.name;
     }
 
+    let hostname: string | null = null;
+    if (parsedInput.assetId) {
+      const [ownedAsset] = await db
+        .select({ id: asset.id, hostname: asset.hostname })
+        .from(asset)
+        .where(
+          and(
+            eq(asset.id, parsedInput.assetId),
+            eq(asset.clientId, parsedInput.clientId),
+            eq(asset.organizationId, ctx.organizationId),
+            eq(asset.active, true)
+          )
+        )
+        .limit(1);
+      if (!ownedAsset) throw new ActionError("Máquina inválida para este cliente.");
+      hostname = ownedAsset.hostname;
+    }
+
     let operatorName: string | null = null;
     if (parsedInput.operatorId) {
       const [ownedOperator] = await db
@@ -308,6 +343,7 @@ export const createTicket = ticketsAction
       number,
       clientId: parsedInput.clientId,
       contactId: parsedInput.contactId || null,
+      assetId: parsedInput.assetId || null,
       operatorId: parsedInput.operatorId || null,
       createdByUserId: ctx.session.user.id,
       title: parsedInput.title,
@@ -321,6 +357,7 @@ export const createTicket = ticketsAction
 
     const bits = [`Ticket ${number} aberto para ${ownedClient.name}`];
     if (contactName) bits.push(`contato ${contactName}`);
+    if (hostname) bits.push(`máquina ${hostname}`);
     if (operatorName) bits.push(`atribuído a ${operatorName}`);
 
     await addEvent({
@@ -340,6 +377,7 @@ export const updateTicket = ticketsAction
       id: z.string(),
       operatorId: z.string().nullable().optional(),
       contactId: z.string().nullable().optional(),
+      assetId: z.string().nullable().optional(),
       priority: z.string().optional(),
       category: z.string().optional(),
     })
@@ -413,6 +451,30 @@ export const updateTicket = ticketsAction
         }
         patch.contactId = nextId;
         events.push(`Contato: ${name}`);
+      }
+    }
+
+    if (parsedInput.assetId !== undefined) {
+      const nextId = parsedInput.assetId || null;
+      if (nextId !== current.assetId) {
+        let name = "nenhuma";
+        if (nextId) {
+          const [ownedAsset] = await db
+            .select({ hostname: asset.hostname })
+            .from(asset)
+            .where(
+              and(
+                eq(asset.id, nextId),
+                eq(asset.clientId, current.clientId),
+                eq(asset.organizationId, ctx.organizationId)
+              )
+            )
+            .limit(1);
+          if (!ownedAsset) throw new ActionError("Máquina inválida para este cliente.");
+          name = ownedAsset.hostname;
+        }
+        patch.assetId = nextId;
+        events.push(`Máquina: ${name}`);
       }
     }
 

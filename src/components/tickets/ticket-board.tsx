@@ -28,8 +28,6 @@ import {
   ticketPriorities,
   ticketStatuses,
 } from "@/config/tickets";
-import { clientOptionLabel } from "@/lib/client-code";
-
 type TicketRow = {
   id: string;
   number: string;
@@ -39,7 +37,15 @@ type TicketRow = {
   category: string;
   createdAt: Date | string;
   clientName: string;
+  hostname: string | null;
   operatorName: string | null;
+};
+
+type AssetOption = {
+  id: string;
+  clientId: string;
+  hostname: string;
+  active: boolean;
 };
 
 type Option = {
@@ -74,10 +80,12 @@ export function TicketBoard({
   const [queue, setQueue] = useState(initialQueue);
   const [clients, setClients] = useState<Option[]>([]);
   const [contacts, setContacts] = useState<Option[]>([]);
+  const [assets, setAssets] = useState<AssetOption[]>([]);
   const [operators, setOperators] = useState<Option[]>([]);
   const [form, setForm] = useState({
     clientId: "",
     contactId: "",
+    assetId: "",
     operatorId: "",
     title: "",
     description: "",
@@ -86,7 +94,6 @@ export function TicketBoard({
   });
 
   const load = useCallback(async () => {
-    setLoading(true);
     const result = await listTickets({
       status: status || undefined,
       priority: priority || undefined,
@@ -103,7 +110,11 @@ export function TicketBoard({
   }, [status, priority, clientId, operatorFilter, queue]);
 
   useEffect(() => {
-    void load();
+    const kick = window.setTimeout(() => {
+      setLoading(true);
+      void load();
+    }, 0);
+    return () => window.clearTimeout(kick);
   }, [load]);
 
   useEffect(() => {
@@ -111,6 +122,7 @@ export function TicketBoard({
       if (result.serverError || !result.data) return;
       setClients(result.data.clients);
       setContacts(result.data.contacts);
+      setAssets(result.data.assets);
       setOperators(result.data.operators);
     });
   }, []);
@@ -119,11 +131,16 @@ export function TicketBoard({
     () => contacts.filter((item) => item.clientId === form.clientId && item.active),
     [contacts, form.clientId]
   );
+  const formAssets = useMemo(
+    () => assets.filter((item) => item.clientId === form.clientId && item.active),
+    [assets, form.clientId]
+  );
 
   function openCreate() {
     setForm({
       clientId: "",
       contactId: "",
+      assetId: "",
       operatorId: "",
       title: "",
       description: "",
@@ -139,6 +156,7 @@ export function TicketBoard({
     const result = await createTicket({
       clientId: form.clientId,
       contactId: form.contactId || undefined,
+      assetId: form.assetId || undefined,
       operatorId: form.operatorId || undefined,
       title: form.title,
       description: form.description || undefined,
@@ -152,6 +170,7 @@ export function TicketBoard({
     }
     toast.success(`Ticket ${result.data?.number} aberto.`);
     setOpen(false);
+    setLoading(true);
     await load();
   }
 
@@ -203,7 +222,7 @@ export function TicketBoard({
           <option value="">Todos os clientes</option>
           {clients.map((item) => (
             <option key={item.id} value={item.id}>
-              {clientOptionLabel(item)}
+              {item.name}
             </option>
           ))}
         </NativeSelect>
@@ -267,7 +286,12 @@ export function TicketBoard({
                       {ticketLabel(ticketCategories, row.category)}
                     </p>
                   </td>
-                  <td className="px-3 py-2.5">{row.clientName}</td>
+                  <td className="px-3 py-2.5">
+                    {row.clientName}
+                    {row.hostname ? (
+                      <p className="text-xs text-muted-foreground">{row.hostname}</p>
+                    ) : null}
+                  </td>
                   <td className="px-3 py-2.5">{row.operatorName || "—"}</td>
                   <td className="px-3 py-2.5">
                     <Badge variant="outline" className={priorityBadgeClass(row.priority)}>
@@ -311,6 +335,7 @@ export function TicketBoard({
                       ...current,
                       clientId: event.target.value,
                       contactId: "",
+                      assetId: "",
                     }))
                   }
                 >
@@ -319,9 +344,37 @@ export function TicketBoard({
                     .filter((item) => item.active)
                     .map((item) => (
                       <option key={item.id} value={item.id}>
-                        {clientOptionLabel(item)}
+                        {item.name}
                       </option>
                     ))}
+                </NativeSelect>
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="ticket-asset">Máquina</FieldLabel>
+                <NativeSelect
+                  id="ticket-asset"
+                  className="h-9"
+                  value={form.assetId}
+                  disabled={!form.clientId}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      assetId: event.target.value,
+                    }))
+                  }
+                >
+                  <option value="">
+                    {!form.clientId
+                      ? "Selecione o cliente"
+                      : formAssets.length === 0
+                        ? "Nenhuma máquina neste cliente"
+                        : "Nenhuma"}
+                  </option>
+                  {formAssets.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.hostname}
+                    </option>
+                  ))}
                 </NativeSelect>
               </Field>
               <Field>
@@ -343,6 +396,29 @@ export function TicketBoard({
                       {item.name}
                     </option>
                   ))}
+                </NativeSelect>
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="ticket-operator">Operador</FieldLabel>
+                <NativeSelect
+                  id="ticket-operator"
+                  className="h-9"
+                  value={form.operatorId}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      operatorId: event.target.value,
+                    }))
+                  }
+                >
+                  <option value="">Sem atribuição</option>
+                  {operators
+                    .filter((item) => item.active)
+                    .map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name}
+                      </option>
+                    ))}
                 </NativeSelect>
               </Field>
               <Field className="sm:col-span-2">
@@ -395,29 +471,6 @@ export function TicketBoard({
                       {item.label}
                     </option>
                   ))}
-                </NativeSelect>
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="ticket-operator">Operador</FieldLabel>
-                <NativeSelect
-                  id="ticket-operator"
-                  className="h-9"
-                  value={form.operatorId}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      operatorId: event.target.value,
-                    }))
-                  }
-                >
-                  <option value="">Sem atribuição</option>
-                  {operators
-                    .filter((item) => item.active)
-                    .map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.name}
-                      </option>
-                    ))}
                 </NativeSelect>
               </Field>
               <Field className="sm:col-span-2">

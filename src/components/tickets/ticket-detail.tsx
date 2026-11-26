@@ -32,6 +32,13 @@ import {
 
 type Option = { id: string; name: string; active: boolean; clientId?: string };
 
+type AssetOption = {
+  id: string;
+  clientId: string;
+  hostname: string;
+  active: boolean;
+};
+
 type Detail = {
   id: string;
   number: string;
@@ -42,6 +49,8 @@ type Detail = {
   category: string;
   clientId: string;
   contactId: string | null;
+  assetId: string | null;
+  hostname: string | null;
   operatorId: string | null;
   createdAt: Date | string;
   updatedAt: Date | string;
@@ -72,10 +81,10 @@ export function TicketDetail({ id }: { id: string }) {
   const [saving, setSaving] = useState(false);
   const [comment, setComment] = useState("");
   const [contacts, setContacts] = useState<Option[]>([]);
+  const [assets, setAssets] = useState<AssetOption[]>([]);
   const [operators, setOperators] = useState<Option[]>([]);
 
   const load = useCallback(async () => {
-    setLoading(true);
     const result = await getTicket({ id });
     setLoading(false);
     if (result.serverError || !result.data) {
@@ -86,13 +95,15 @@ export function TicketDetail({ id }: { id: string }) {
   }, [id]);
 
   useEffect(() => {
-    void load();
+    const kick = window.setTimeout(() => void load(), 0);
+    return () => window.clearTimeout(kick);
   }, [load]);
 
   useEffect(() => {
     void listTicketOptions().then((result) => {
       if (result.serverError || !result.data) return;
       setContacts(result.data.contacts);
+      setAssets(result.data.assets);
       setOperators(result.data.operators);
     });
   }, []);
@@ -103,6 +114,15 @@ export function TicketDetail({ id }: { id: string }) {
         (item) => item.clientId === ticket?.clientId && item.active
       ),
     [contacts, ticket?.clientId]
+  );
+  const clientAssets = useMemo(
+    () =>
+      assets.filter(
+        (item) =>
+          item.clientId === ticket?.clientId &&
+          (item.active || item.id === ticket?.assetId)
+      ),
+    [assets, ticket?.assetId, ticket?.clientId]
   );
 
   const nextStatuses = useMemo(() => {
@@ -131,6 +151,7 @@ export function TicketDetail({ id }: { id: string }) {
       id,
       operatorId: String(data.get("operatorId") || "") || null,
       contactId: String(data.get("contactId") || "") || null,
+      assetId: String(data.get("assetId") || "") || null,
       priority: String(data.get("priority") || ticket.priority),
       category: String(data.get("category") || ticket.category),
     });
@@ -223,6 +244,12 @@ export function TicketDetail({ id }: { id: string }) {
               <dd>{ticket.clientName}</dd>
             </div>
             <div>
+              <dt className="text-xs text-muted-foreground">Máquina</dt>
+              <dd>
+                {ticket.hostname || "—"}
+              </dd>
+            </div>
+            <div>
               <dt className="text-xs text-muted-foreground">Contato</dt>
               <dd>{ticket.contactName || "—"}</dd>
             </div>
@@ -276,6 +303,21 @@ export function TicketDetail({ id }: { id: string }) {
                     {item.name}
                   </option>
                 ))}
+            </NativeSelect>
+          </Field>
+          <Field>
+            <FieldLabel>Máquina</FieldLabel>
+            <NativeSelect
+              name="assetId"
+              className="h-9"
+              defaultValue={ticket.assetId ?? ""}
+            >
+              <option value="">Nenhuma</option>
+              {clientAssets.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.hostname}
+                </option>
+              ))}
             </NativeSelect>
           </Field>
           <Field>
