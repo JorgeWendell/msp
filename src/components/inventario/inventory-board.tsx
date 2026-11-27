@@ -106,7 +106,15 @@ function locateScore(row: AssetRow, query: string) {
   return best;
 }
 
-type SortKey = "hostname" | "clientName" | "kind" | "os" | "ip" | "agentStatus";
+type SortKey =
+  | "hostname"
+  | "clientName"
+  | "kind"
+  | "os"
+  | "ip"
+  | "agentStatus"
+  | "serial"
+  | "location";
 
 function sortValue(row: AssetRow, key: SortKey) {
   if (key === "kind") return assetLabel(assetKinds, row.kind);
@@ -162,6 +170,7 @@ export function InventoryBoard({
   const isCameras = group.slug === "cameras";
   const showMachinesPanel =
     SHOW_MACHINES_PANEL_LIST && !isPrinters && !isNetwork && !isCameras;
+  const tableColumns = isPrinters ? 6 : isCameras ? 8 : 7;
   const groupKinds = assetKinds.filter((item) =>
     (group.kinds as readonly string[]).includes(item.value)
   );
@@ -449,6 +458,32 @@ export function InventoryBoard({
                 sortDir={sortDir}
                 onSort={handleSort}
               />
+              {isPrinters ? (
+                <>
+                  <SortHeader
+                    label="Marca"
+                    column="serial"
+                    sortKey={sortKey}
+                    sortDir={sortDir}
+                    onSort={handleSort}
+                  />
+                  <SortHeader
+                    label="Modelo"
+                    column="os"
+                    sortKey={sortKey}
+                    sortDir={sortDir}
+                    onSort={handleSort}
+                  />
+                  <SortHeader
+                    label="Local"
+                    column="location"
+                    sortKey={sortKey}
+                    sortDir={sortDir}
+                    onSort={handleSort}
+                  />
+                </>
+              ) : (
+                <>
               <SortHeader
                 label="Tipo"
                 column={isCameras ? "os" : "kind"}
@@ -460,7 +495,7 @@ export function InventoryBoard({
                 <th className="px-3 py-2.5 font-medium">ID (Cloud)</th>
               ) : (
                 <SortHeader
-                  label={isPrinters ? "Modelo" : isNetwork ? "Versão" : "SO"}
+                  label={isNetwork ? "Versão" : "SO"}
                   column="os"
                   sortKey={sortKey}
                   sortDir={sortDir}
@@ -488,19 +523,21 @@ export function InventoryBoard({
                   onSort={handleSort}
                 />
               )}
+                </>
+              )}
               <th className="px-3 py-2.5 font-medium">Ações</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
               <tr>
-                <td className="px-3 py-8 text-center text-muted-foreground" colSpan={isCameras ? 8 : 7}>
+                <td className="px-3 py-8 text-center text-muted-foreground" colSpan={tableColumns}>
                   Carregando...
                 </td>
               </tr>
             ) : displayed.length === 0 ? (
               <tr>
-                <td className="px-3 py-8 text-center text-muted-foreground" colSpan={isCameras ? 8 : 7}>
+                <td className="px-3 py-8 text-center text-muted-foreground" colSpan={tableColumns}>
                   {rows.length === 0
                     ? group.empty
                     : "Nenhum registro encontrado neste grupo."}
@@ -522,23 +559,26 @@ export function InventoryBoard({
                     <Link href={`/inventario/${row.id}`} className="font-medium hover:underline">
                       {row.hostname}
                     </Link>
-                    {isCameras ? (
+                    {isCameras || isPrinters ? (
                       !row.active ? (
                         <p className="text-xs text-muted-foreground">Inativa</p>
                       ) : null
                     ) : (
                       <p className="text-xs text-muted-foreground">
-                        {row.serial ||
-                          (isPrinters
-                            ? "Sem marca"
-                            : isNetwork
-                              ? "Sem acesso"
-                              : "Sem serial")}
+                        {row.serial || (isNetwork ? "Sem acesso" : "Sem serial")}
                         {!row.active ? " · Inativa" : ""}
                       </p>
                     )}
                   </td>
                   <td className="px-3 py-2.5">{row.clientName}</td>
+                  {isPrinters ? (
+                    <>
+                      <td className="px-3 py-2.5">{row.serial || "—"}</td>
+                      <td className="px-3 py-2.5">{row.os || "—"}</td>
+                      <td className="px-3 py-2.5">{row.location || "—"}</td>
+                    </>
+                  ) : (
+                    <>
                   <td className="px-3 py-2.5">
                     {isCameras ? row.os || "—" : assetLabel(assetKinds, row.kind)}
                   </td>
@@ -560,6 +600,8 @@ export function InventoryBoard({
                         {assetLabel(agentStatuses, row.agentStatus)}
                       </Badge>
                     </td>
+                  )}
+                    </>
                   )}
                   <td className="px-3 py-2.5">
                     <DropdownMenu>
@@ -583,7 +625,7 @@ export function InventoryBoard({
                           <Pencil />
                           Editar
                         </DropdownMenuItem>
-                        {isCameras ? null : (
+                        {isCameras || isPrinters ? null : (
                           <DropdownMenuItem onClick={() => void handleConnect(row)}>
                             <Monitor />
                             Conectar
@@ -618,10 +660,14 @@ export function InventoryBoard({
             {displayed.length === 1
               ? isCameras
                 ? "1 câmera"
-                : "1 máquina"
+                : isPrinters
+                  ? "1 impressora"
+                  : "1 máquina"
               : isCameras
                 ? `${displayed.length} câmeras`
-                : `${displayed.length} máquinas`}
+                : isPrinters
+                  ? `${displayed.length} impressoras`
+                  : `${displayed.length} máquinas`}
             {pageCount > 1 ? ` · página ${currentPage} de ${pageCount}` : ""}
           </p>
           {pageCount > 1 ? (
